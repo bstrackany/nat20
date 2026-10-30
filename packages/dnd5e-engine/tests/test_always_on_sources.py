@@ -18,10 +18,12 @@ import pytest
 from dnd5e_srd_data import Feat, FeatCategory, Provenance, ReviewState
 from dnd5e_srd_data.loader import BundledAssetLoader
 from dnd5e_srd_data.schema.common import (
+    ActivationBlock,
     ActivityTrigger,
     DamageActivity,
     DamageActivityDamageBlock,
     DamagePartBlock,
+    HealActivity,
     PassiveEffect,
     PassiveEffectChange,
 )
@@ -35,7 +37,14 @@ from dnd5e_engine import (
     submit_player_intent,
 )
 from dnd5e_engine.build_spec import derive_sheet, make_build_spec
-from dnd5e_engine.events import ActivityTriggered, AttackRolled, DamageApplied, EffectApplied
+from dnd5e_engine.events import (
+    ActivityTriggered,
+    AttackRolled,
+    CastFailed,
+    DamageApplied,
+    EffectApplied,
+    HealingApplied,
+)
 from dnd5e_engine.lib_loader import set_lib_loader_for_tests
 from dnd5e_engine.orchestrator import _build_hydration_payload, _find_combatant, _get_live
 from dnd5e_engine.spatial import cell_id as cell
@@ -260,3 +269,49 @@ def test_a_seeded_changes_tokens_are_resolved_for_the_character():
     from dnd5e_engine.activities.dice import roll_expr
 
     assert roll_expr(payload["save_modifiers"]["char:pal"]["passive_save_bonus"], Random(1)) == 3
+
+
+def test_a_feats_own_activity_can_be_used():
+    """A feat with an action of its own is in the character's repertoire like a
+    granted feature; its activity's own ``uses`` caps it."""
+    feat = _feat().model_copy(
+        update={
+            "activities": [
+                HealActivity(
+                    _id="emberheal",
+                    name="Ember Mend",
+                    activation=ActivationBlock(type="bonus"),
+                    healing=DamagePartBlock(number=1, denomination=8, types=["healing"]),
+                    uses={"max": "1", "spent": 0, "recovery": []},  # type: ignore[arg-type]
+                )
+            ]
+        }
+    )
+    set_lib_loader_for_tests(_WithFeat(feat))
+
+    async def _go():
+        handle, live = await _start()
+        use = PlayerIntent(
+            intent_type="use_feature", feature_id="ember-heart", target_id="char:ftr"
+        )
+        await submit_player_intent(handle, actor_id="char:ftr", intent=use)
+        await submit_player_intent(handle, actor_id="char:ftr", intent=use)
+        return live
+
+    live = asyncio.run(_go())
+    [heal] = _events(live, HealingApplied)
+    assert heal.target_id == "char:ftr"
+    assert [e.reason for e in _events(live, CastFailed)] == ["no_uses_remaining"]
+
+
+def test_a_sheets_feats_fold_into_the_derived_sheet():
+    """``CharacterBuildSpec.feats`` carries the feats the sheet says the
+    character has; their always-on effects count like a derived feat's."""
+    sheet = derive_sheet(
+        make_build_spec(
+            species_slug="human", class_slug="fighter", level=3, feats=("ember-heart",)
+        ),
+        loader=_WithFeat(_feat()),
+    )
+    assert "ember-heart" in sheet.feats
+    assert "charmed" in sheet.condition_immunities

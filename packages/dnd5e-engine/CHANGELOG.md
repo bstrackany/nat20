@@ -66,6 +66,11 @@ caster takes. Requires the matching `dnd5e-srd-data`.
   feature's (`Feat.passive_effects`, `dnd5e-srd-data` unreleased).
 - **`ActivityTrigger.once_per_turn`** — the activity fires at most once in any
   one turn ("Once per turn, when you hit a creature").
+- **A feat's own action can be used.** `use_feature` accepts a feat the
+  character has (`Combatant.feats`) as it does a granted feature; the feat
+  activity's own `uses` block caps it. **`CharacterBuildSpec.feats`** carries
+  the feats a sheet says the character has beyond those the build derives, so
+  their always-on effects fold into `derive_sheet` (`make_build_spec(feats=)`).
 - **Reactions from data: the `"arm"` and `"disarm"` intents.** `arm` keeps a
   spell, granted feature or feat reaction armed for the whole combat at no
   cost, its trigger read from the activity's typed `reaction_conditions`

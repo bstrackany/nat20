@@ -9000,18 +9000,24 @@ def _resolve_feature_invocation(
     ``_FeatureInvocation.extends_rage``). ``leaving_form``: the caster is in a
     Wild Shape form and names none (see ``_FeatureInvocation.leaves_form``).
     """
-    if feature_id not in _granted_feature_slugs(caster):
+    # A feat the character has is in its repertoire like a granted feature (SRD
+    # 5.2 feats with an action of their own: Chef's treats, a Boon's action);
+    # its activity carries its own ``uses`` block, a feat having none.
+    is_feat = feature_id not in _granted_feature_slugs(caster) and feature_id in caster.feats
+    if feature_id not in _granted_feature_slugs(caster) and not is_feat:
         _LOGGER.warning(
             "feature_not_in_repertoire feature_id=%s class_slug=%s subclass_slug=%s "
-            "species_slug=%s level=%d",
+            "species_slug=%s level=%d feats=%s",
             feature_id,
             caster.class_slug,
             caster.subclass_slug,
             caster.species_slug,
             caster.character_level,
+            list(caster.feats),
         )
         return None
-    feature = get_lib_loader().get_feature(feature_id)
+    loader = get_lib_loader()
+    feature = loader.get_feat(feature_id) if is_feat else loader.get_feature(feature_id)
     all_activities = list(feature.activities) if feature else []
     if not all_activities:
         _LOGGER.warning("class_feature_no_typed_activities feature_id=%s", feature_id)
@@ -9045,7 +9051,9 @@ def _resolve_feature_invocation(
         passive_effects=list(feature.passive_effects) if feature else [],
         is_bonus_action=activation == "bonus",
         is_free_action=activation == "special" and selected.kind in _FREE_SPECIAL_ACTIVITY_KINDS,
-        use_cap=_feature_use_cap(feature, _uses_roll_data(caster, scale_values)),
+        use_cap=_feature_use_cap(
+            selected if is_feat else feature, _uses_roll_data(caster, scale_values)
+        ),
         use_cost=_feature_activity_cost(all_activities, selected, scaling_value=scaling_value),
         scaling_value=scaling_value,
     )
@@ -11703,11 +11711,16 @@ def _hold_use_for_intent(
             pre_event_count=pre_event_count,
         )
     elif intent.intent_type == "use_feature" and intent.feature_id:
+        granted = intent.feature_id in _granted_feature_slugs(current)
         _hold_use(
             live,
             current,
-            source_kind="feature",
-            source=loader.get_feature(intent.feature_id),
+            source_kind="feature" if granted else "feat",
+            source=(
+                loader.get_feature(intent.feature_id)
+                if granted
+                else loader.get_feat(intent.feature_id)
+            ),
             slot_level=None,
             spellcasting_ability=None,
             pre_event_count=pre_event_count,

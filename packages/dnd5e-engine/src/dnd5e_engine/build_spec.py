@@ -115,6 +115,10 @@ class CharacterBuildSpec(BaseModel):
     ability_scores: AbilityScores = Field(default_factory=AbilityScores)
     equipment: tuple[str, ...] = ()
     selected_choices: tuple[str, ...] = ()
+    #: Feats the character has beyond those the build derives from its
+    #: background and level choices — a host's own record of what the sheet
+    #: says. Their always-on effects fold into the sheet like a derived feat's.
+    feats: tuple[str, ...] = ()
     background_slug: str | None = None
     hp_mode: HpMode = "fixed"
     # Host-recorded Hit Die results per class for ``hp_mode="rolled"``: the
@@ -223,6 +227,7 @@ def make_build_spec(
     ac_calc_mode: AcCalcMode | None = None,
     attuned_items: tuple[str, ...] = (),
     ability_score_method: AbilityScoreMethod | None = None,
+    feats: tuple[str, ...] = (),
 ) -> CharacterBuildSpec:
     payload: dict[str, Any] = {
         "species_slug": species_slug,
@@ -236,6 +241,7 @@ def make_build_spec(
         "ac_calc_mode": ac_calc_mode,
         "attuned_items": attuned_items,
         "ability_score_method": ability_score_method,
+        "feats": feats,
     }
     if classes:
         payload["classes"] = dict(classes)
@@ -775,6 +781,9 @@ def derive_sheet(spec: CharacterBuildSpec, *, loader: AssetLoader) -> DerivedShe
         ),
     ]
     _check_repeats(feats, loader)
+    # The feats the sheet says the character has beyond those the build derives
+    # (a host's own record of its choices); each counts once.
+    feats += [slug for slug in spec.feats if slug not in feats]
     changes = [*changes, *_always_on_feat_changes(feats, loader)]
     spell_abilities, slotless_casts = _magic_initiate_spells(choices.magic_initiate, feats, loader)
     modifiers = {name: ability_modifier(score) for name, score in scores.items()}
