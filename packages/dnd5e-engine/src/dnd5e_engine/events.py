@@ -167,6 +167,11 @@ IntentType = Literal[
     "shove",
     "stand_up",
     "escape_grapple",
+    # SRD §Reactions — keep a reaction armed for the whole combat (no Action;
+    # it fires whenever its trigger occurs and the Reaction is available) and
+    # stand it down again.
+    "arm",
+    "disarm",
 ]
 
 

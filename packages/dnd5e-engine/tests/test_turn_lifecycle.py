@@ -314,7 +314,11 @@ def test_hooks_registered_by_the_engine_are_present_and_ordered():
 
     assert asyncio.run(_run()) == {
         "round_start": [],
-        "turn_start": ["engine:reaction-effect-expiry", "engine:activity-triggers-turn-start"],
+        "turn_start": [
+            "engine:reaction-effect-expiry",
+            "engine:standing-reactions",
+            "engine:activity-triggers-turn-start",
+        ],
         "turn_end": [
             "engine:activity-triggers-turn-end",
             "engine:repeat-save",

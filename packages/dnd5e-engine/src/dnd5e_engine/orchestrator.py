@@ -270,7 +270,19 @@ _LOGGER = logging.getLogger(__name__)
 # a closed set is a Literal, never bare str. These three are the exact values
 # ``PlayerIntent.reaction_trigger``'s own docstring already named as its
 # intended examples.
-ReactionTrigger = Literal["cast_spell", "hit_by_attack", "targeted_by_magic_missile"]
+ReactionTrigger = Literal[
+    "cast_spell", "hit_by_attack", "targeted_by_magic_missile", "takes_damage"
+]
+
+#: The corpus's typed reaction conditions (``ActivationBlock.reaction_conditions``,
+#: derived from each reaction's own text) → the queue's trigger. A kind with no
+#: entry (``creature_falls``) cannot be armed yet.
+_REACTION_KIND_TO_TRIGGER: dict[str, ReactionTrigger] = {
+    "hit_by_attack": "hit_by_attack",
+    "sees_spell_cast": "cast_spell",
+    "targeted_by_spell": "targeted_by_magic_missile",
+    "takes_damage": "takes_damage",
+}
 
 # SRD 5.2 granted dice a creature spends on its own roll. One today: "That
 # creature gains one of your Bardic Inspiration dice."
@@ -3308,6 +3320,10 @@ class _LiveCombat:
     # (popped + resolved) by ``_pop_pending_reaction`` when a matching trigger
     # is observed from another combatant's intent.
     pending_reactions: list[_PendingReaction] = field(default_factory=list)
+    # SRD §Reactions — the reactions an ``"arm"`` intent keeps armed for the
+    # whole combat (``_PendingReaction.standing``): re-queued at the owner's
+    # turn start whenever they are not pending (``_hook_rearm_standing_reactions``).
+    standing_reactions: list[_PendingReaction] = field(default_factory=list)
     # The uses whose activities fire later (``Activity.trigger``): Acid Arrow's
     # lingering acid, Hex's extra damage, Sunbeam's later lines. Made by
     # ``_hold_use`` when a cast, feature or item use resolves; walked by the
@@ -3504,6 +3520,13 @@ class _PendingReaction:
     trigger: ReactionTrigger
     spell_id: str | None
     slot_level: int | None
+    #: A feature or feat reaction (Deflect Attacks, a feat's "when you take
+    #: damage" rider) in place of a spell, and the activity of it to resolve.
+    feature_id: str | None = None
+    activity_id: str | None = None
+    #: Armed for the whole combat by an ``"arm"`` intent: re-queued at the
+    #: owner's turn start after it fires, until a ``"disarm"``.
+    standing: bool = False
 
 
 @dataclass
@@ -3875,7 +3898,9 @@ def _clamp_movement_budget(live: _LiveCombat, entity_id: str) -> None:
 #: SRD 5.2 Incapacitated — intents that spend NO action, Bonus Action or
 #: Reaction and therefore stay legal: ending the turn, and plain movement
 #: (Speed is governed separately — see ``_handle_move``'s speed gate).
-_INCAPACITATED_ALLOWED_INTENTS: frozenset[str] = frozenset({"pass", "move", "drop_concentration"})
+_INCAPACITATED_ALLOWED_INTENTS: frozenset[str] = frozenset(
+    {"pass", "move", "drop_concentration", "arm", "disarm"}
+)
 
 
 def _find_combatant(live: _LiveCombat, entity_id: str) -> Combatant | None:
@@ -7145,6 +7170,9 @@ def _register_default_turn_hooks(live: _LiveCombat) -> None:
     live.lifecycle.register("turn_end", _hook_rage_extension, key="engine:rage-extension")
     live.lifecycle.register(
         "turn_start", _hook_expire_reaction_effects, key="engine:reaction-effect-expiry"
+    )
+    live.lifecycle.register(
+        "turn_start", _hook_rearm_standing_reactions, key="engine:standing-reactions"
     )
     live.lifecycle.register(
         "turn_start", _hook_fire_turn_start_triggers, key="engine:activity-triggers-turn-start"
@@ -11881,6 +11909,17 @@ def _fire_resolution_triggers(live: _LiveCombat, actor: Combatant, pre_event_cou
                         live, use, activity, subject_id=ev.target_id, target_id=ev.attacker_id
                     )
         elif isinstance(ev, DamageApplied) and ev.amount > 0 and ev.target_id != actor.entity_id:
+            # SRD §Reactions — "taking damage from a creature" (Hellish Rebuke,
+            # a feat's "when you take damage"): the damaged creature's armed
+            # reaction answers the creature whose act dealt it.
+            damaged = _find_combatant(live, ev.target_id)
+            if damaged is not None:
+                _drain_targeted_reactions(
+                    live,
+                    trigger="takes_damage",
+                    triggering_actor_id=actor.entity_id,
+                    targets=[damaged],
+                )
             for use in _live_uses(live):
                 for activity in _waiting(use, ActivityTriggerKind.TAKES_DAMAGE):
                     trigger = trigger_of(activity)
@@ -12396,15 +12435,130 @@ def _register_pending_reaction(live: _LiveCombat, actor_id: str, intent: PlayerI
     """
     if intent.intent_type != "ready" or intent.reaction_trigger is None:
         return
-    live.pending_reactions = [pr for pr in live.pending_reactions if pr.owner_id != actor_id]
+    live.pending_reactions = [
+        pr for pr in live.pending_reactions if pr.owner_id != actor_id or pr.standing
+    ]
     live.pending_reactions.append(
         _PendingReaction(
             owner_id=actor_id,
             trigger=intent.reaction_trigger,
             spell_id=intent.spell_id,
             slot_level=intent.slot_level,
+            feature_id=intent.feature_id,
+            activity_id=intent.activity_id,
         )
     )
+
+
+def _reaction_triggers_of(source: Any) -> list[ReactionTrigger]:
+    """The queue triggers a spell's, feature's or feat's own activities name
+    (``activation.reaction_conditions``, typed from each reaction's text), in
+    corpus order, each once."""
+    triggers: list[ReactionTrigger] = []
+    for activity in getattr(source, "activities", ()):
+        for condition in activity.activation.reaction_conditions:
+            trigger = _REACTION_KIND_TO_TRIGGER.get(str(condition.kind.value))
+            if trigger is not None and trigger not in triggers:
+                triggers.append(trigger)
+    return triggers
+
+
+def _arm_source(live: _LiveCombat, current: Combatant, intent: PlayerIntent) -> Any | None:
+    """The spell, granted feature or held feat an ``arm`` names, or ``None``."""
+    loader = get_lib_loader()
+    if intent.spell_id:
+        return loader.get_spell(intent.spell_id)
+    if intent.feature_id:
+        if intent.feature_id in _granted_feature_slugs(current):
+            return loader.get_feature(intent.feature_id)
+        if intent.feature_id in current.feats:
+            return loader.get_feat(intent.feature_id)
+    return None
+
+
+def _handle_arm(live: _LiveCombat, current: Combatant, intent: PlayerIntent) -> None:
+    """SRD §Reactions — keep a reaction armed for the whole combat. Unlike
+    ``"ready"`` (the SRD Ready action, spent each turn), arming costs nothing
+    and names no trigger of its own: the trigger comes from the spell's,
+    feature's or feat's text as the corpus typed it (Shield: "hit by an attack
+    roll"; Hellish Rebuke: "taking damage"), unless ``reaction_trigger`` says
+    otherwise. The reaction then fires by itself whenever the trigger occurs and
+    the Reaction is available, and is re-armed at the owner's next turn start.
+    Keeps the turn. Refused with ``CastFailed(reason="activity_invalid")`` when
+    nothing names a trigger."""
+    source = _arm_source(live, current, intent)
+    triggers = (
+        [intent.reaction_trigger] if intent.reaction_trigger else _reaction_triggers_of(source)
+    )
+    _emit(
+        live,
+        IntentSubmitted(
+            actor_id=current.entity_id,
+            intent_type="arm",
+            spell_id=intent.spell_id,
+            target_id=None,
+            item_id=None,
+        ),
+    )
+    if source is None or not triggers:
+        _emit(
+            live,
+            CastFailed(
+                actor_id=current.entity_id,
+                spell_id=intent.spell_id or intent.feature_id or "",
+                reason="activity_invalid",
+            ),
+        )
+        return
+    for trigger in triggers:
+        armed = _PendingReaction(
+            owner_id=current.entity_id,
+            trigger=trigger,
+            spell_id=intent.spell_id,
+            slot_level=intent.slot_level,
+            feature_id=intent.feature_id,
+            activity_id=intent.activity_id,
+            standing=True,
+        )
+        if armed not in live.standing_reactions:
+            live.standing_reactions.append(armed)
+        if armed not in live.pending_reactions:
+            live.pending_reactions.append(armed)
+
+
+def _handle_disarm(live: _LiveCombat, current: Combatant, intent: PlayerIntent) -> None:
+    """Stand down the actor's standing reactions — the one ``spell_id`` /
+    ``feature_id`` names, or all of them. Keeps the turn."""
+
+    def _named(pr: _PendingReaction) -> bool:
+        if pr.owner_id != current.entity_id or not pr.standing:
+            return False
+        if intent.spell_id or intent.feature_id:
+            return pr.spell_id == intent.spell_id and pr.feature_id == intent.feature_id
+        return True
+
+    live.standing_reactions = [pr for pr in live.standing_reactions if not _named(pr)]
+    live.pending_reactions = [pr for pr in live.pending_reactions if not _named(pr)]
+    _emit(
+        live,
+        IntentSubmitted(
+            actor_id=current.entity_id,
+            intent_type="disarm",
+            spell_id=intent.spell_id,
+            target_id=None,
+            item_id=None,
+        ),
+    )
+
+
+def _hook_rearm_standing_reactions(live: _LiveCombat, actor_id: str | None) -> None:
+    """``turn_start`` hook — the actor's standing reactions are queued again
+    (the Reaction they spend refreshes at the same moment)."""
+    if actor_id is None:
+        return
+    for armed in live.standing_reactions:
+        if armed.owner_id == actor_id and armed not in live.pending_reactions:
+            live.pending_reactions.append(armed)
 
 
 def _drain_pre_resolution_reactions(
@@ -12523,10 +12677,134 @@ def _pop_pending_reaction(
     return None
 
 
-def _resolve_readied_spell_cast(
-    live: _LiveCombat, reactor: Combatant, popped: _PendingReaction
+def _resolve_readied_reaction(
+    live: _LiveCombat, reactor: Combatant, popped: _PendingReaction, *, against: Combatant | None
 ) -> None:
-    """Auto-fire a pre-armed reaction spell (Shield) as a full self-cast.
+    """Fire a popped reaction: a spell (``_resolve_readied_spell_cast``) or a
+    feature or feat (``_resolve_readied_feature``). ``against`` is the creature
+    whose act triggered it — the attacker, the damager — for a reaction that
+    answers it (Hellish Rebuke); a Self-range spell lands on the reactor."""
+    if popped.feature_id:
+        _resolve_readied_feature(live, reactor, popped, against=against)
+    else:
+        _resolve_readied_spell_cast(live, reactor, popped, against=against)
+
+
+def _reaction_invocation(
+    live: _LiveCombat, reactor: Combatant, pending: _PendingReaction
+) -> _FeatureInvocation | None:
+    """The activity a feature or feat reaction resolves, with its use cap, or
+    ``None`` when the reactor lacks the feature, the activity is not named
+    where several exist, or its uses are spent."""
+    feature_id = pending.feature_id or ""
+    invocation: _FeatureInvocation | None = None
+    if feature_id in _granted_feature_slugs(reactor):
+        invocation = _resolve_feature_invocation(reactor, feature_id, pending.activity_id)
+    elif feature_id in reactor.feats:
+        feat = get_lib_loader().get_feat(feature_id)
+        activities = list(feat.activities) if feat else []
+        chosen = (
+            activities[0]
+            if len(activities) == 1
+            else next((a for a in activities if a.id == pending.activity_id), None)
+        )
+        if feat is not None and chosen is not None:
+            invocation = _FeatureInvocation(
+                activities=[chosen],
+                passive_effects=list(feat.passive_effects),
+                is_bonus_action=False,
+                # a feat has no ``uses`` block of its own: the activity's caps it
+                use_cap=_feature_use_cap(
+                    chosen, _uses_roll_data(reactor, _scale_values_of(reactor))
+                ),
+                use_cost=_feature_activity_cost(activities, chosen, scaling_value=None),
+                scaling_value=None,
+            )
+    if invocation is None or _feature_uses_exhausted(
+        live, reactor.entity_id, feature_id, invocation
+    ):
+        return None
+    return invocation
+
+
+def _resolve_readied_feature(
+    live: _LiveCombat, reactor: Combatant, popped: _PendingReaction, *, against: Combatant | None
+) -> None:
+    """Fire a feature or feat reaction: spend the Reaction and a use, emit
+    ``ReactionTriggered``, resolve the activity against the creature that
+    triggered it — or the reactor, for an activity that targets itself or
+    heals (Deflect Attacks' reduction) — and hold what it leaves for later."""
+    invocation = _reaction_invocation(live, reactor, popped)
+    feature_id = popped.feature_id or ""
+    if invocation is None:
+        return
+    _update_combatant(live, reactor.entity_id, reaction_available=False)
+    _record_capped_feature_use(live, reactor.entity_id, feature_id, invocation)
+    _emit(
+        live,
+        ReactionTriggered(
+            actor_id=reactor.entity_id, reaction_name=feature_id, trigger_event_uuid=""
+        ),
+    )
+    activities = invocation.activities
+    self_only = _activities_target_self(activities) or all(
+        getattr(a, "kind", None) == "heal" for a in activities
+    )
+    targets = [reactor] if self_only or against is None else [against]
+    payload = _build_hydration_payload(live, caster=reactor)
+    actx = build_activity_context(
+        reactor,
+        targets,
+        rng=live.rng,
+        event_emitter=lambda ev: _emit(live, ev),
+        slot_level=None,
+        base_spell_level=None,
+        spellcasting_ability=None,
+        concentration=False,
+        source_passive_effects=invocation.passive_effects,
+        spell_book={},
+        passive_damage_modifiers=payload["passive_damage_modifiers"],
+        save_modifiers=payload["save_modifiers"],
+        check_modifiers=payload["check_modifiers"],
+        d20_test_penalty=payload["d20_test_penalty"],
+        target_distance_ft=_target_distance_map(live, reactor.entity_id, targets),
+        attacker_grappler_id=_condition_source_entity(live, reactor, "grappled"),
+        scale_values=_scale_values_of(reactor),
+        class_levels=_class_levels(reactor),
+        is_feature_invocation=True,
+        legendary_resistance_armed=payload["legendary_resistance_armed"],
+        legendary_resistances_remaining_by_entity=payload[
+            "legendary_resistances_remaining_by_entity"
+        ],
+        undead_fortitude_holds=live.undead_fortitude_holds,
+    )
+    pre_event_count = len(live.event_log)
+    for activity in activities:
+        resolve_activity(activity, actx, weapon=None)
+    _fold_resolution_outcome(live, reactor, spell=None, actx=actx, pre_event_count=pre_event_count)
+    _sync_legendary_resistance(live, pre_event_count)
+    source = get_lib_loader().get_feature(feature_id) or get_lib_loader().get_feat(feature_id)
+    _hold_use(
+        live,
+        reactor,
+        source_kind="feature" if feature_id in _granted_feature_slugs(reactor) else "feat",
+        source=source,
+        slot_level=None,
+        spellcasting_ability=None,
+        pre_event_count=pre_event_count,
+    )
+
+
+def _resolve_readied_spell_cast(
+    live: _LiveCombat,
+    reactor: Combatant,
+    popped: _PendingReaction,
+    *,
+    against: Combatant | None = None,
+) -> None:
+    """Auto-fire a pre-armed reaction spell (Shield) as a full cast — on the
+    reactor for a Self-range spell, else on ``against``, the creature whose act
+    triggered it (Hellish Rebuke's "the creature that damaged you").
 
     Consumes the reactor's Reaction and pays for the spell (``_pay_for_cast``:
     its slotless cast, else a slot), emits ``ReactionTriggered``,
@@ -12565,10 +12843,13 @@ def _resolve_readied_spell_cast(
     _emit_spell_cast(live, reactor.entity_id, spell, slot_level)
 
     spellcasting_ability = _spellcasting_ability_for(reactor, spell.slug)
+    targets = (
+        [reactor] if against is None or spell.range.units is SpellRangeUnits.SELF else [against]
+    )
     payload = _build_hydration_payload(live, caster=reactor)
     actx = build_activity_context(
         reactor,
-        [reactor],
+        targets,
         rng=live.rng,
         event_emitter=lambda ev: _emit(live, ev),
         slot_level=slot_level,
@@ -12588,7 +12869,7 @@ def _resolve_readied_spell_cast(
         # path only resolves cast SaveActivity/DamageActivity from a Spell
         # (Shield's own reaction cast), never an AttackActivity with a
         # fetched Weapon, so the proficiency gate never applies here.
-        target_distance_ft=_target_distance_map(live, reactor.entity_id, [reactor]),
+        target_distance_ft=_target_distance_map(live, reactor.entity_id, targets),
         attacker_grappler_id=_condition_source_entity(live, reactor, "grappled"),
         legendary_resistance_armed=payload["legendary_resistance_armed"],
         legendary_resistances_remaining_by_entity=payload[
@@ -12598,7 +12879,8 @@ def _resolve_readied_spell_cast(
     )
     pre_event_count = len(live.event_log)
     for activity in spell.activities:
-        resolve_activity(activity, actx, weapon=None)
+        if fires_with_use(activity):
+            resolve_activity(activity, actx, weapon=None)
 
     # A readied concentration spell concentrates like an on-turn cast.
     _fold_resolution_outcome(
@@ -12630,6 +12912,15 @@ def _resolve_readied_spell_cast(
             live.reaction_effects_pending_expiry.setdefault(reactor.entity_id, []).append(
                 (ev.effect.target_id, ev.effect.id, ev.effect.origin)
             )
+
+
+def _pending_eligible(live: _LiveCombat, reactor: Combatant, pending: _PendingReaction) -> bool:
+    """Can this armed reaction fire now? A spell needs its slot or slotless cast
+    (``_readied_cast_eligible``); a feature or feat needs the reactor to have it
+    with a use left (``_reaction_invocation``)."""
+    if pending.feature_id:
+        return _reaction_invocation(live, reactor, pending) is not None
+    return _readied_cast_eligible(live, reactor, pending)
 
 
 def _readied_cast_eligible(
@@ -12665,14 +12956,16 @@ def _drain_targeted_reactions(
             trigger,
             triggering_actor_id=triggering_actor_id,
             only_owner_id=target.entity_id,
-            eligible=lambda reactor, pending: _readied_cast_eligible(live, reactor, pending),
+            eligible=lambda reactor, pending: _pending_eligible(live, reactor, pending),
         )
         if popped is None:
             continue
         reactor = _find_combatant(live, popped.owner_id)
         if reactor is None:
             continue
-        _resolve_readied_spell_cast(live, reactor, popped)
+        _resolve_readied_reaction(
+            live, reactor, popped, against=_find_combatant(live, triggering_actor_id)
+        )
         fired.add(target.entity_id)
     return fired
 
@@ -12871,6 +13164,12 @@ async def _dispatch_turn_nonending_intent(
         return True
     if intent.intent_type == "stand_up":
         _handle_stand_up(live, current, intent)
+        return True
+    if intent.intent_type == "arm":
+        _handle_arm(live, current, intent)
+        return True
+    if intent.intent_type == "disarm":
+        _handle_disarm(live, current, intent)
         return True
     return False
 

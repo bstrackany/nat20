@@ -66,6 +66,19 @@ caster takes. Requires the matching `dnd5e-srd-data`.
   feature's (`Feat.passive_effects`, `dnd5e-srd-data` unreleased).
 - **`ActivityTrigger.once_per_turn`** — the activity fires at most once in any
   one turn ("Once per turn, when you hit a creature").
+- **Reactions from data: the `"arm"` and `"disarm"` intents.** `arm` keeps a
+  spell, granted feature or feat reaction armed for the whole combat at no
+  cost, its trigger read from the activity's typed `reaction_conditions`
+  (Shield's "hit by an attack roll" and "targeted by the Magic Missile
+  spell", Counterspell's "casting a spell", Hellish Rebuke's "taking damage"),
+  re-armed at the owner's turn start (`engine:standing-reactions`). A feature
+  or feat reaction spends its use and resolves its activity against the
+  creature that triggered it, or itself for a self-targeting or healing one.
+  `ReactionTrigger` gains `"takes_damage"`, fired for the damaged creature
+  after a resolution's damage; `PlayerIntent.feature_id` on a `"ready"` arms
+  a feature. A readied spell now resolves against the triggering creature
+  unless its range is Self (a readied Hellish Rebuke no longer hits its
+  caster).
 
 ### Changed
 

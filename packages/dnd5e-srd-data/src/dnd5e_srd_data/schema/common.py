@@ -42,14 +42,21 @@ from pydantic import (
 
 
 class Provenance(BaseModel, frozen=True):
-    """Where this entry came from. One source per entry; no field-level mixing."""
+    """Where this entry came from. One source per entry; no field-level mixing.
 
-    source: Literal["foundry"]
+    The shipped corpus is ``foundry`` (the Foundry VTT dnd5e SRD packs,
+    CC-BY-4.0). A consumer's own entries — content it owns and loads through
+    its own ``AssetLoader`` — say ``homebrew`` with the licence that applies to
+    them (``proprietary``: a book the table owns, not for redistribution) and
+    may name no SRD version.
+    """
+
+    source: Literal["foundry", "homebrew"]
     source_url: str
     ingest_date: date
     ingest_version: str
-    srd_version: frozenset[Literal["5.1", "5.2"]]
-    license_tag: Literal["CC-BY-4.0"] = "CC-BY-4.0"
+    srd_version: frozenset[Literal["5.1", "5.2"]] = frozenset()
+    license_tag: Literal["CC-BY-4.0", "proprietary", "unspecified"] = "CC-BY-4.0"
 
     @field_serializer("srd_version")
     def _serialize_srd_version(self, value: frozenset[str]) -> list[str]:

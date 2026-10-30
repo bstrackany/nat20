@@ -139,8 +139,10 @@ Create Food and Water*) are out of scope for a combat engine by nature.
 Reactions work, with one constraint that shapes any host integration:
 
 > **The engine never pauses mid-resolution to ask whether you want to react.**
-> A creature must *pre-arm* its reaction on its own turn with a `"ready"`
-> intent. The engine then fires it automatically when the trigger occurs.
+> A creature *arms* its reaction in advance — for the whole combat with an
+> `"arm"` intent (no Action; the trigger read from the reaction's own typed
+> condition), or for one round with the `"ready"` intent — and the engine fires
+> it automatically when the trigger occurs.
 
 | Reaction | Status |
 |---|---|
@@ -148,6 +150,7 @@ Reactions work, with one constraint that shapes any host integration:
 | Shield (incl. vs. Magic Missile) | ✅ Resolved — answers an attack roll only: a monster's save action (a Breath Weapon) leaves it readied (C26b) |
 | Counterspell | ✅ Resolved — slot-gated at the readied level and 60 ft range/LoS-gated at drain time (an ineligible reactor's armed reaction is skipped, not popped) |
 | Readied spell cast | ✅ Resolved — a readied leveled spell (e.g. Shield) needs an unexpended slot at its readied level; an ineligible reactor's armed reaction is skipped, not popped |
+| Reactions from data (`"arm"`) | ⚠️ Partial — a spell, granted feature or feat whose activity carries a typed `reaction_conditions` entry is armed for the whole combat and fires on it: "hit by an attack roll" (Shield), "casting a spell" (Counterspell), "targeted by the Magic Missile spell", "taking damage" (Hellish Rebuke, against the creature that dealt it; a feat's "when you take damage" heal). A feature or feat reaction spends its use; a Self-range spell lands on the reactor, any other on the triggering creature. "A creature falls" (Feather Fall) is typed but not fired |
 | Arbitrary SRD "Ready an action with a custom trigger" | ❌ Not modelled |
 
 ## Environment & exploration

@@ -35,6 +35,31 @@ await advance_monster_turn(handle)
 If you want a player to *choose* in the moment, your host has to ask them
 before their turn ends and arm accordingly. You cannot ask them mid-resolution.
 
+## Arming for the whole combat
+
+`"ready"` is the SRD Ready action: it spends the Action and lasts one round.
+Most reactions aren't readied at all — Shield, Hellish Rebuke, Uncanny Dodge
+are simply taken when their trigger occurs — so an `"arm"` intent keeps one
+armed for the whole combat at no cost, firing whenever its trigger occurs and
+the Reaction is available, and re-arming at the owner's next turn start:
+
+```python
+await submit_player_intent(
+    handle,
+    actor_id="char:warlock",
+    intent=PlayerIntent(intent_type="arm", spell_id="hellish-rebuke"),
+)
+```
+
+No `reaction_trigger` is needed: the trigger comes from the reaction's own
+typed condition in the corpus (`activation.reaction_conditions`, derived from
+its text — "taking damage from a creature that you can see"). A granted
+feature or a feat arms the same way with `feature_id` (and `activity_id` where
+it has several); its use is spent when it fires. A reaction that answers a
+creature resolves against the one whose act triggered it (Hellish Rebuke's
+fire hits the attacker); a Self-range spell lands on the reactor. `"disarm"`
+stands one (or all) down. Arming keeps the turn.
+
 ## Recognized triggers
 
 `PlayerIntent.reaction_trigger` accepts a closed set:
@@ -81,3 +106,4 @@ neither is gated by the engine.
 For the full design, including how the queue drains relative to attack
 resolution and why Shield's AC bonus lands before the hit/miss comparison, see
 the [reaction queue design note](../dev/reaction-queue.md).
+

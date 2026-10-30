@@ -562,15 +562,17 @@ counts are pinned by `packages/dnd5e-engine/tests/test_capability_matrix.py`.
 
 ## Architecture (2026-08-22)
 
-- **Reactions are not data-driven.** `orchestrator.py` recognizes reactions
-  through a closed `ReactionTrigger` literal that names a specific spell
-  (`"targeted_by_magic_missile"`), plus per-spell branches
+- **Reactions are data-driven in part (amended 2026-10-30).** An `"arm"`
+  intent reads a spell's, feature's or feat's typed `reaction_conditions`
+  and fires it on `hit_by_attack`, `cast_spell`, `targeted_by_magic_missile`
+  or the new `takes_damage`; `creature_falls` (Feather Fall) is typed but
+  never fired (no falling), the per-spell branches
   (`_apply_magic_missile_shield_carveout`, `_hellish_rebuke_target_invalid`,
-  `_drain_counterspell_reaction`). This contradicts the project's central design
-  claim that new content is a data change, not an engine change: The typed
-  vocabulary now ships (`ActivationBlock.reaction_conditions` /
-  `ReactionTriggerKind`, C22); the orchestrator's `ReactionTrigger` Literal and
-  the per-spell branches still need to read it (no cluster owns it). Note the
+  `_drain_counterspell_reaction`) still stand beside the generic path, and
+  Magic Missile's trigger is still the spell's name rather than
+  `targeted_by_spell` with the slug the condition carries. A reaction that
+  reduces incoming damage (Uncanny Dodge: "halve the attack's damage") has
+  no primitive and fires after the damage is applied. Note the
   shipped canonical still stores the inheriting activity's own `type` (e.g.
   Shield's utility activity says `action` while carrying populated
   `reaction_conditions`) — consumers must not gate on

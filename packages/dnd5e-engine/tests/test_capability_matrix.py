@@ -856,10 +856,20 @@ _PROBES: dict[str, tuple[Any, str]] = {
     # A readied reaction fires only on one of the engine's named triggers.
     "Ready an action with a custom trigger": (
         lambda: (
-            'ReactionTrigger = Literal["cast_spell", "hit_by_attack", "targeted_by_magic_missile"]'
-            in _src("orchestrator.py")
+            "ReactionTrigger = Literal[" in _src("orchestrator.py")
+            and '"custom"'
+            not in _src("orchestrator.py").split("ReactionTrigger = Literal[")[1][:200]
         ),
         "❌",
+    ),
+    # Armed reactions come from the corpus's typed conditions; a falling creature
+    # is typed but nothing fires it.
+    "Reactions from data": (
+        lambda: (
+            "_REACTION_KIND_TO_TRIGGER" in _src("orchestrator.py")
+            and '"creature_falls"' not in _src("orchestrator.py")
+        ),
+        "⚠️",
     ),
     # Held activities fire at turn boundaries, on hits and on later uses; a
     # creature in an area at its turn still has no producer (BACKLOG.md).
