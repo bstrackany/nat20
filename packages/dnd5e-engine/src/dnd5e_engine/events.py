@@ -65,6 +65,10 @@ AdvantageSource = Literal[
     "effect",
     "condition:attacker",
     "condition:target",
+    # An effect on the TARGET that grants advantage or disadvantage on attack
+    # rolls against it (``flags.grants.advantage.attack`` /
+    # ``flags.grants.disadvantage.attack``: Blur, Faerie Fire).
+    "grant:target",
     "cover",
     "range:long",
     "ranged_in_melee",

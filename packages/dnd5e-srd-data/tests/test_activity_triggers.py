@@ -126,6 +126,7 @@ def test_marks_add_their_damage_on_a_hit_against_the_marked_creature(
         ("call-lightning", "dnd5eactivity200", False),
         ("vampiric-touch", "dnd5eactivity000", True),
         ("telekinesis", "ntGShpXYlBqLMZmK", True),
+        ("haste", "rBQrZnq7cHkSUAK9", False),
     ],
 )
 def test_repeatable_spells_mark_the_activity_used_on_later_turns(
@@ -133,7 +134,11 @@ def test_repeatable_spells_mark_the_activity_used_on_later_turns(
 ) -> None:
     spell = LOADER.get_spell(slug)
     assert spell is not None
-    assert "Until the spell ends" in spell.description or "on your later turns" in spell.description
+    assert (
+        "Until the spell ends" in spell.description
+        or "on your later turns" in spell.description
+        or "When the spell ends" in spell.description
+    )
     assert _activity(slug, activity_id).trigger == ActivityTrigger(
         kind="later_use", also_at_cast=also_at_cast
     )

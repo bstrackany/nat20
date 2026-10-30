@@ -31,11 +31,12 @@ counts are pinned by `packages/dnd5e-engine/tests/test_capability_matrix.py`.
   orchestrator hands the resolution a conjuration carrier for an allowlisted
   source: Spiritual Weapon, Magic Weapon, Wild Shape and Polymorph resolve
   (C21a), and Summon Dragon seats its Draconic Spirit (C21b; the other
-  summons are under "Roster summons"). The measured consequence: **105 of 339
-  SRD spells (31%) load correctly and emit no events**, 30 of them
-  concentration spells — *Blur, Darkness, Fog Cloud,
+  summons are under "Roster summons"). The measured consequence: **104 of 339
+  SRD spells (31%) load correctly and emit no events**, 29 of them
+  concentration spells — *Darkness, Fog Cloud,
   Wall of Force, Silent Image, Globe of Invulnerability, Expeditious
-  Retreat* — which at least concentrate now. Several are combat staples a host
+  Retreat* — which at least concentrate now (Blur applies its effect since
+  2026-10-30). Several are combat staples a host
   will reach for immediately.
   (`packages/dnd5e-engine/src/dnd5e_engine/activities/resolver.py`)
 - **Enchantments other than Magic Weapon, and shape-shifts other than Wild
@@ -696,6 +697,20 @@ counts are pinned by `packages/dnd5e-engine/tests/test_capability_matrix.py`.
   casting Thunderwave deals damage but pushes nobody.
   (`packages/dnd5e-engine/src/dnd5e_engine/orchestrator.py::advance_monster_turn`)
 ## Effect-change sidecars (2026-07-02)
+
+- **Effect keys still unread (2026-10-30).** `system.attributes.hp.tempmax`
+  (Aid's maximum Hit Points), `system.attributes.senses.*` (Darkvision's
+  range), `system.abilities.<ab>.value` (a Belt of Giant Strength), the
+  `init.roll.mode` / `concentration.roll.mode` / `death.roll.mode` advantages,
+  and Resistance's "reduces the total damage taken by 1d4" (no key at all).
+  `docs/concepts/effects.md` lists what is read.
+  (`packages/dnd5e-engine/src/dnd5e_engine/orchestrator.py::_fold_active_effect_changes`)
+- **"When the spell ends" has no moment (2026-10-30).** Haste's lethargy
+  ("When the spell ends, the target is Incapacitated and has a Speed of 0
+  until the end of its next turn") is a `later_use` the host applies when it
+  drops the concentration; an `Activity.trigger` kind for the end of the use
+  would fire it itself.
+  (`packages/dnd5e-srd-data/tools/translators/foundry.py::_ACTIVITY_TRIGGERS`)
 
 - **Two effect-key namespaces for check/save bonuses (2026-08-26).** The public
   standalone check resolver folds `check.bonus` / `check.skill_check.bonus` /

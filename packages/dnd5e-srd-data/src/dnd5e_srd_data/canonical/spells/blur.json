@@ -27,7 +27,17 @@
         "units": "inst",
         "value": null
       },
-      "effects": [],
+      "effects": [
+        {
+          "id": "PsuBObX6WLcNEvUw",
+          "level": {
+            "max": null,
+            "min": null
+          },
+          "on_save": null,
+          "riders": null
+        }
+      ],
       "flags": {},
       "id": "dnd5eactivity000",
       "img": "",
@@ -109,7 +119,14 @@
   "name": "Blur",
   "passive_effects": [
     {
-      "changes": [],
+      "changes": [
+        {
+          "key": "flags.grants.disadvantage.attack",
+          "mode": 5,
+          "priority": null,
+          "value": "1"
+        }
+      ],
       "description": "<p>For the duration, any creature has Disadvantage on attack rolls against you. An attacker is immune to this effect if it perceives you with Blindsight or Truesight.</p>",
       "disabled": false,
       "duration": {

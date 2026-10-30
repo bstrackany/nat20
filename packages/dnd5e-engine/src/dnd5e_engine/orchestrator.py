@@ -2792,6 +2792,7 @@ def _monster_context_kwargs(
         # vex-grant target or sap-mark holder from a prior PC weapon hit.
         "attacker_vex_advantage": _attacker_vex_advantage_map(live, current.entity_id, target_list),
         "attacker_sapped": current.entity_id in live.sap_marks,
+        "active_effects": _effects_in_play(live, current, target_list),
         # C18 §Monster action economy — Legendary Resistance sidecars:
         # a monster's own attack/cast/legendary-action resolution
         # can roll a save against IT (e.g. a Counterspell-style effect, or
@@ -3313,6 +3314,10 @@ class _LiveCombat:
     # turn hooks and ``_fire_resolution_triggers``; dropped once no effect of
     # the use remains (``triggers.use_is_live``).
     held_uses: list[HeldUse] = field(default_factory=list)
+    # A creature's own condition immunities, recorded the first time an effect
+    # with ``system.traits.ci.value`` lands on it, so the granted ones can be
+    # removed again when the effect ends (``_sync_condition_immunities``).
+    base_condition_immunities: dict[str, list[str]] = field(default_factory=dict)
     # SRD §Reactions / one-round buffs — a reaction-applied effect (Shield)
     # fires DURING another actor's turn, so the generic caster-turn-end
     # duration tick (``_tick_durations_at_turn_end``) won't recur until the
@@ -3673,10 +3678,68 @@ def _effective_speed(c: Combatant, live: _LiveCombat | None = None) -> int:
     at 0. ``live=None`` (unit-test / pre-combat callers) projects
     conditions only.
     """
-    speed = project_speed(c.base_speed, _condition_names(c), exhaustion_level_of(c.conditions))
+    base = c.base_speed
+    if live is not None:
+        base = _walk_speed_from_effects(base, live.active_effects.get(c.entity_id, []))
+    speed = project_speed(base, _condition_names(c), exhaustion_level_of(c.conditions))
     if live is not None and live.slow_marks.get(c.entity_id):
         speed = max(0, speed - 10)
     return speed
+
+
+def _walk_speed_from_effects(base: int, active: Sequence[ActiveEffect]) -> int:
+    """The walking speed after the combatant's effects change it (Foundry's
+    ``system.attributes.movement.walk``): Longstrider adds 10, Haste doubles,
+    Slow halves, Lethargy sets 0, Boots of Striding set 30. Multiplications
+    round down to the 5-foot grid; a value that is not a number (an unresolved
+    ``@scale`` token) is skipped."""
+    speed = base
+    for effect in active:
+        for change in effect.changes:
+            if change.key not in _FOUNDRY_WALK_SPEED_KEYS:
+                continue
+            try:
+                value = float(str(change.value).strip())
+            except ValueError:
+                continue
+            if change.mode == "add":
+                speed += int(value)
+            elif change.mode == "multiply":
+                speed = int(speed * value) // 5 * 5
+            elif change.mode == "override":
+                speed = int(value)
+            elif change.mode == "downgrade":
+                speed = min(speed, int(value))
+            elif change.mode == "upgrade":
+                speed = max(speed, int(value))
+    return max(0, speed)
+
+
+def _condition_immunities_from_effects(active: Sequence[ActiveEffect]) -> list[str]:
+    """The conditions the combatant's effects make it immune to (Heroism's
+    ``system.traits.ci.value`` "frightened")."""
+    granted: list[str] = []
+    for effect in active:
+        for change in effect.changes:
+            if change.key == _FOUNDRY_CONDITION_IMMUNITY_KEY:
+                condition = str(change.value).strip().strip('"').strip().lower()
+                if condition and condition not in granted:
+                    granted.append(condition)
+    return granted
+
+
+def _sync_condition_immunities(live: _LiveCombat, entity_id: str) -> None:
+    """Keep ``Combatant.condition_immunities`` = the creature's own (recorded
+    the first time an effect touches it) plus what its live effects grant, so
+    ``is_condition_immune`` reads one list whatever the source."""
+    combatant = _find_combatant(live, entity_id)
+    if combatant is None:
+        return
+    own = live.base_condition_immunities.setdefault(entity_id, list(combatant.condition_immunities))
+    granted = _condition_immunities_from_effects(live.active_effects.get(entity_id, []))
+    merged = [*own, *(g for g in granted if g not in own)]
+    if merged != list(combatant.condition_immunities):
+        _update_combatant(live, entity_id, condition_immunities=merged)
 
 
 def _set_dodging(live: _LiveCombat, actor_id: str) -> None:
@@ -5414,6 +5477,8 @@ def _emit_apply_effect_applied(live: _LiveCombat, event: EffectApplied) -> None:
     for PCs."""
     applied = event.effect
     live.active_effects.setdefault(applied.target_id, []).append(applied)
+    if any(ch.key == _FOUNDRY_CONDITION_IMMUNITY_KEY for ch in applied.changes):
+        _sync_condition_immunities(live, applied.target_id)
     # One entry per (status, effect), the seed's key: an effect that lands a
     # condition the target already holds from another effect gets its own
     # entry, so losing either effect later (``_emit_apply_effect_expired`` /
@@ -5520,6 +5585,10 @@ def _emit_apply_effect_expired(live: _LiveCombat, event: EffectExpired) -> None:
         if eff.id == event.effect_id and eff.origin == event.origin:
             expired_effect = target_effects.pop(i)
             break
+    if expired_effect is not None and any(
+        ch.key == _FOUNDRY_CONDITION_IMMUNITY_KEY for ch in expired_effect.changes
+    ):
+        _sync_condition_immunities(live, event.target_id)
     if expired_effect is not None and expired_effect.statuses:
         combatant = _find_combatant(live, event.target_id)
         remaining_effect_ids = {eff.id for eff in live.active_effects.get(event.target_id, [])}
@@ -5713,6 +5782,33 @@ _FOUNDRY_SPELL_DC_BONUS_KEY = "system.bonuses.spell.dc"
 # the signed-string coercion, appending into the ``resistances`` sidecar list
 # ``apply.py`` already reads (see docs/dev/passive-projection.md).
 _FOUNDRY_RESISTANCE_KEY = "system.traits.dr.value"
+#: The other two damage-trait sets, folded the same way (Mind Blank's psychic
+#: immunity, Armor of Vulnerability's vulnerabilities).
+_FOUNDRY_DAMAGE_TRAIT_KEYS: dict[str, str] = {
+    _FOUNDRY_RESISTANCE_KEY: "resistances",
+    "system.traits.di.value": "immunities",
+    "system.traits.dv.value": "vulnerabilities",
+}
+#: ``system.abilities.<ab>.save.roll.mode`` / ``.check.roll.mode`` — Foundry's
+#: advantage (``1``) or disadvantage (``-1``) on one ability's saves or checks
+#: (Haste's Dexterity saves, Hex's checks with the cursed ability).
+_FOUNDRY_ROLL_MODE_KEYS: dict[str, tuple[str, str]] = {
+    f"system.abilities.{ability}.{kind}.roll.mode": (ability.upper(), kind)
+    for ability in ("str", "dex", "con", "int", "wis", "cha")
+    for kind in ("save", "check")
+}
+#: Effects that set a floor under AC: Barkskin's ``ac.min`` and the
+#: ``ac.calc`` formulas (Mage Armor's "mage": 13 + Dexterity modifier).
+_FOUNDRY_AC_MIN_KEY = "system.attributes.ac.min"
+_FOUNDRY_AC_CALC_KEY = "system.attributes.ac.calc"
+_FOUNDRY_AC_CALC_BASE: dict[str, int] = {"mage": 13}
+#: Walking speed changes an effect applies in combat (Longstrider's +10,
+#: Haste's x2, Slow's x0.5, Lethargy's 0).
+_FOUNDRY_WALK_SPEED_KEYS: frozenset[str] = frozenset(
+    {"system.attributes.movement.walk", "movement.walk"}
+)
+#: Condition immunities an effect grants (Heroism's Frightened).
+_FOUNDRY_CONDITION_IMMUNITY_KEY = "system.traits.ci.value"
 
 # F1d — the three D20-test bonus buckets that land on the per-actor CHECK sidecar
 # (``check_modifiers[id]``) and the per-ability SAVE sidecar
@@ -5849,15 +5945,11 @@ def _fold_active_effect_changes(
             # and the signed-string coercion below. Append the cleaned type into
             # the ``resistances`` sidecar list ``apply.py`` unions with the
             # target's static resistances. Producer-only fix.
-            if change.key == _FOUNDRY_RESISTANCE_KEY:
-                dmg_type = str(change.value).strip().strip('"').strip()
-                if dmg_type:
-                    existing = per_target_dmg.get("resistances")
-                    resist_list = list(existing) if existing else []
-                    if dmg_type not in resist_list:
-                        resist_list.append(dmg_type)
-                    per_target_dmg["resistances"] = resist_list
-                    dmg_dirty = True
+            if change.key in _FOUNDRY_DAMAGE_TRAIT_KEYS:
+                dmg_dirty = _fold_damage_trait(change, per_target_dmg) or dmg_dirty
+                continue
+            if change.key in _FOUNDRY_ROLL_MODE_KEYS:
+                _fold_roll_mode(change, per_target_entry, per_target_check)
                 continue
             if change.mode != "add":
                 continue
@@ -5969,6 +6061,44 @@ def _fold_active_effect_changes(
     return dmg_dirty
 
 
+def _fold_damage_trait(change: ActiveEffectChange, per_target_dmg: dict[str, Any]) -> bool:
+    """Add a damage type to the resistance, immunity or vulnerability set an
+    effect's ``system.traits.{dr,di,dv}.value`` change names (Rage's
+    bludgeoning resistance, Mind Blank's psychic immunity). Foundry ``mode=2``
+    on these keys means "add to the SET", so the value is a type, not a number.
+    Returns whether the sidecar changed."""
+    trait_set = _FOUNDRY_DAMAGE_TRAIT_KEYS[change.key]
+    dmg_type = str(change.value).strip().strip('"').strip()
+    if not dmg_type:
+        return False
+    existing = per_target_dmg.get(trait_set)
+    trait_list = list(existing) if existing else []
+    if dmg_type not in trait_list:
+        trait_list.append(dmg_type)
+    per_target_dmg[trait_set] = trait_list
+    return True
+
+
+def _fold_roll_mode(
+    change: ActiveEffectChange, per_target_entry: dict[str, Any], per_target_check: dict[str, Any]
+) -> None:
+    """SRD 5.2 §Advantage and Disadvantage — an effect's
+    ``system.abilities.<ab>.{save,check}.roll.mode`` of ``1`` is advantage, of
+    ``-1`` disadvantage, on that one ability's saves or checks (Haste's
+    Dexterity saves, Hex's checks with the cursed ability). Lands on the same
+    ability-code lists the condition projection fills."""
+    ability_code, kind = _FOUNDRY_ROLL_MODE_KEYS[change.key]
+    sign = _signed_int(change.value)
+    if not sign:
+        return
+    entry = per_target_entry if kind == "save" else per_target_check
+    list_key = f"passive_{kind}_{'adv' if sign > 0 else 'dis'}"
+    codes = list(entry.get(list_key) or [])
+    if ability_code not in codes:
+        codes.append(ability_code)
+    entry[list_key] = codes
+
+
 def _project_target_modifiers(
     c: Combatant,
     live: _LiveCombat,
@@ -6068,8 +6198,36 @@ def _project_target_modifiers(
         )
         if dmg_dirty:
             passive_damage_modifiers[c.entity_id] = per_target_dmg
+        floor = _ac_floor_from_effects(c, active)
+        if floor:
+            per_target_entry["passive_ac_floor"] = floor
 
     return per_target_entry, check_entry
+
+
+def _signed_int(value: Any) -> int:
+    """A change value as an int (``"-1"`` → -1); 0 for anything that isn't one."""
+    try:
+        return int(str(value).strip())
+    except ValueError:
+        return 0
+
+
+def _ac_floor_from_effects(c: Combatant, active: Sequence[ActiveEffect]) -> int:
+    """The highest AC floor the combatant's effects set: Barkskin's
+    ``system.attributes.ac.min`` ("your AC can't be less than 17") or an
+    ``ac.calc`` formula (Mage Armor's "mage": "base AC of 13 plus its Dexterity
+    modifier"). 0 when none applies."""
+    floor = 0
+    for effect in active:
+        for change in effect.changes:
+            if change.key == _FOUNDRY_AC_MIN_KEY:
+                floor = max(floor, _signed_int(change.value))
+            elif change.key == _FOUNDRY_AC_CALC_KEY:
+                base = _FOUNDRY_AC_CALC_BASE.get(str(change.value).strip())
+                if base is not None:
+                    floor = max(floor, base + ability_modifier_of(c, "dex"))
+    return floor
 
 
 def _project_caster_pools(
@@ -9747,7 +9905,8 @@ def _resolve_construct_attack(
         concentration=False,
         source_passive_effects=[],
         spell_book={},
-        active_effects=tuple(live.active_effects.get(owner.entity_id, [])),
+        # the owner's effects (its flags, a running Bless) and the target's come
+        # with the kwargs (``_effects_in_play``)
         **(_monster_context_kwargs(live, owner, target_list, payload) | geometry),
     )
     resolve_activity(
@@ -12082,6 +12241,16 @@ def _resolve_targets(
                 and _spell_is_self_or_targetless(cast_spell, intent.target_id)
             )
             or (
+                # SRD 5.2 §Range — "Self": the spell's effect is on the caster
+                # whatever its activities carry (False Life's Temporary Hit
+                # Points are a heal, not an effect rider).
+                not targets
+                and intent.intent_type == "cast_spell"
+                and bool(activities)
+                and cast_spell is not None
+                and cast_spell.range.units is SpellRangeUnits.SELF
+            )
+            or (
                 not targets
                 and intent.feature_id
                 and activities
@@ -12600,6 +12769,20 @@ async def _dispatch_turn_nonending_intent(
     return False
 
 
+def _effects_in_play(
+    live: _LiveCombat, actor: Combatant, targets: Sequence[Combatant]
+) -> tuple[ActiveEffect, ...]:
+    """The effects a resolution reads: the actor's own (its advantage flags,
+    Sneak Attack) and each target's (what an effect on the target grants an
+    attack against it — Blur, Faerie Fire). Each creature's once, actor first,
+    then targets in order."""
+    seen: list[str] = []
+    for c in (actor, *targets):
+        if c.entity_id not in seen:
+            seen.append(c.entity_id)
+    return tuple(eff for cid in seen for eff in live.active_effects.get(cid, []))
+
+
 def _pc_attack_context_kwargs(
     live: _LiveCombat,
     current: Combatant,
@@ -12669,7 +12852,7 @@ def _pc_attack_context_kwargs(
         # the per-turn "spent" gate rebuilt from the live Combatant flag, and
         # the per-target ally-adjacent predicate (a spatial read owned here,
         # not in the pure resolver).
-        "active_effects": tuple(live.active_effects.get(current.entity_id, [])),
+        "active_effects": _effects_in_play(live, current, geometry_targets),
         "sneak_attack_spent": {current.entity_id: current.sneak_attack_spent_this_turn},
         "sneak_attack_ally_adjacent": _sneak_ally_adjacent_map(live, current, geometry_targets),
         # SRD 5.2 Savage Attacker: the per-turn use, rebuilt from the live

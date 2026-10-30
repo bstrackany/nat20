@@ -27,7 +27,7 @@ from dnd5e_engine.rules.skills import (
     saving_throw,
     skill_check,
 )
-from dnd5e_engine.types.effects import ActiveEffect
+from dnd5e_engine.types.effects import ActiveEffect, flag_change_is_set
 
 CheckKind = Literal["skill", "ability", "saving_throw"]
 
@@ -169,7 +169,7 @@ def resolve_check(spec: CheckSpec) -> CheckResult:
         ability_suffix = (spec.ability or "").lower() if spec.ability else ""
     for eff in spec.active_effects:
         for ch in eff.changes:
-            if ch.mode != "override" or ch.value is not True:
+            if not flag_change_is_set(ch):
                 continue
             for root in flag_roots:
                 # Accept the broad form ("flags.advantage.check") and the

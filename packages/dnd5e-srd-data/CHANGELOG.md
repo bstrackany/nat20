@@ -19,9 +19,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the use" and is left out of a dump, so unmarked entries are unchanged on
   disk.
 
+- **Two more translator tables** keyed by the SRD 5.2 sentence they follow:
+  `_EFFECT_CHANGE_CORRECTIONS` adds the change an effect's text states but its
+  Foundry source left to a module — Blur's "any creature has Disadvantage on
+  attack rolls against you" and Faerie Fire's "Attack rolls against an
+  affected creature or object have Advantage" (`flags.grants.*.attack`); and
+  `_ACTIVITY_EFFECT_REF_CORRECTIONS` adds the effect ref an activity lacks
+  (Blur's cast applies Blurred).
+
 ### Changed
 
-- **Fourteen activities on twelve spells carry a trigger**: Acid Arrow's and
+- **Haste's "Apply Lethargy" is a `later_use`** ("When the spell ends, the
+  target is Incapacitated and has a Speed of 0"): the cast no longer applies
+  the lethargy with the haste.
+- **Fifteen activities on thirteen spells carry a trigger**: Acid Arrow's and
   Vitriolic Sphere's lingering acid (`turn_end`, `once`), Searing Smite's and
   Ensnaring Strike's start-of-turn damage (`turn_start`; Searing Smite's save
   `ends_on_save`), Weird's end-of-turn save (`ends_on_save`), Hex's and

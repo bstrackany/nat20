@@ -300,6 +300,10 @@ class ActivityResolutionContext:
     # ``total >= target_ac`` comparison. Absent target -> +0. Empty default
     # keeps the golden corpus identical.
     passive_ac_bonus: dict[str, int] = field(default_factory=dict)
+    # Per-target AC floor from an effect (Barkskin's ``ac.min`` 17, Mage Armor's
+    # ``ac.calc`` "mage" = 13 + Dexterity modifier): ``attack.py`` lifts the
+    # target's base AC to it before cover and bonuses. Absent target -> no floor.
+    passive_ac_floor: dict[str, int] = field(default_factory=dict)
     # Per-actor ability/skill-check modifier sidecar, mirroring
     # ``effects/check.py:_read_check_modifiers``'s shape
     # ``{entity_id: {"skills": {slug: mod}, "ability_mods": {ability: mod},

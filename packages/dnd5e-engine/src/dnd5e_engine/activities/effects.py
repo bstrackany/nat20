@@ -151,11 +151,16 @@ def _duration_from_passive(duration: dict[str, typing.Any] | None) -> ActiveEffe
     """
     if not duration:
         return ActiveEffectDuration()
-    return ActiveEffectDuration(
-        rounds=duration.get("rounds"),
-        turns=duration.get("turns"),
-        seconds=duration.get("seconds"),
-    )
+    rounds = duration.get("rounds")
+    seconds = duration.get("seconds")
+    # Foundry packs ship a ``rounds`` counter for the combat tracker beside the
+    # real ``seconds`` duration, and the two often disagree: Longstrider's
+    # "until the spell ends" hour ships ``rounds: 1, seconds: 3600``. The engine
+    # ticks ``rounds`` first, so the shorter counter would end the spell after
+    # one round. SRD 5.2 §Duration: a round is 6 seconds — take the longer.
+    if isinstance(rounds, int) and isinstance(seconds, int) and seconds > 0:
+        rounds = max(rounds, -(-seconds // 6))
+    return ActiveEffectDuration(rounds=rounds, turns=duration.get("turns"), seconds=seconds)
 
 
 def passive_effect_to_active_effect(

@@ -401,6 +401,7 @@ def build_activity_context(
     # no dice, so this never perturbs the seed stream for the one reaction
     # that needs it).
     passive_ac_bonus: dict[str, int] = {}
+    passive_ac_floor: dict[str, int] = {}
     for entity_id, entry in save_modifiers.items():
         saves = entry.get("saves")
         if isinstance(saves, dict):
@@ -411,6 +412,9 @@ def build_activity_context(
         ac_bonus = entry.get("passive_ac_bonus")
         if isinstance(ac_bonus, str) and ac_bonus:
             passive_ac_bonus[entity_id] = roll_expr(ac_bonus, rng)
+        ac_floor = entry.get("passive_ac_floor")
+        if isinstance(ac_floor, int) and ac_floor > 0:
+            passive_ac_floor[entity_id] = ac_floor
         for src_key, dest in (
             ("passive_save_adv", passive_save_adv),
             ("passive_save_dis", passive_save_dis),
@@ -474,6 +478,7 @@ def build_activity_context(
         passive_save_dis=passive_save_dis,
         passive_save_auto_fail=passive_save_auto_fail,
         passive_ac_bonus=passive_ac_bonus,
+        passive_ac_floor=passive_ac_floor,
         target_cover=target_cover or {},
         # C16b — SRD 5.2 "Unseen Attackers and Targets": the two PRE-RESOLVED
         # per-target visibility maps, computed by the orchestrator

@@ -122,7 +122,7 @@ def resolve_check(activity: CheckActivity, ctx: ActivityResolutionContext) -> No
     actor = ctx.targets[0] if ctx.targets else ctx.caster
 
     modifier = _check_modifier(ctx, actor, skill=skill, ability=ability)
-    roll = _roll_d20(ctx, actor, modifier)
+    roll = _roll_d20(ctx, actor, modifier, ability=ability)
     total = roll.total
     succeeded = (total >= dc) if dc is not None else None
 
@@ -223,7 +223,9 @@ def _resolve_skill_ability(activity: CheckActivity) -> tuple[str | None, Ability
 # ── roll + modifier ───────────────────────────────────────────────────────────
 
 
-def _roll_d20(ctx: ActivityResolutionContext, actor: Combatant, modifier: int) -> D20Result:
+def _roll_d20(
+    ctx: ActivityResolutionContext, actor: Combatant, modifier: int, *, ability: str = ""
+) -> D20Result:
     """The check's D20 Test, honoring ``variables["force_check_d20"]``.
 
     Delegates to the shared ``activities/d20.py::roll_d20_test`` primitive (F2c),
@@ -237,16 +239,31 @@ def _roll_d20(ctx: ActivityResolutionContext, actor: Combatant, modifier: int) -
     ROLLING actor. There is no check-advantage producer in the engine yet
     (Help / Guidance are not modelled), so the advantage side stays empty.
 
+    An effect on the actor that gives advantage or disadvantage on checks with
+    one ability (Enhance Ability's, Hex's ``system.abilities.<ab>.check.roll.mode``)
+    lands on the same sidecar as ``passive_check_adv`` / ``passive_check_dis``
+    ability-code lists (``"all"`` for every ability), tagged ``"effect"``.
+
     Draw discipline: a check with no disadvantage flag consumes exactly one
     ``rng.randint(1, 20)`` (unchanged); a flagged actor now consumes two.
     """
     forced = ctx.variables.get(FORCE_CHECK_D20)
     forced_natural = int(forced) if forced is not None else None
+    entry = ctx.check_modifiers.get(actor.entity_id, {})
+    adv: tuple[AdvantageSource, ...] = ()
     dis: tuple[AdvantageSource, ...] = ()
-    if ctx.check_modifiers.get(actor.entity_id, {}).get("disadvantage"):
+    if entry.get("disadvantage"):
         dis = ("condition:attacker",)
+    codes = {ability.upper(), "all"}
+    if codes & set(entry.get("passive_check_adv", ())):
+        adv = ("effect",)
+    if codes & set(entry.get("passive_check_dis", ())) and not dis:
+        dis = ("effect",)
     return roll_d20_test(
-        ctx.rng, modifier, AdvantageSources(disadvantage=dis), forced_natural=forced_natural
+        ctx.rng,
+        modifier,
+        AdvantageSources(advantage=adv, disadvantage=dis),
+        forced_natural=forced_natural,
     )
 
 

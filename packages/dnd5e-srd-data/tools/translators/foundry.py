@@ -92,6 +92,7 @@ from dnd5e_srd_data.schema.common import (
     ActivityTrigger,
     ActivityTriggerKind,
     ActivityTriggerSubject,
+    AppliedEffectRef,
     ReactionCondition,
     ReactionTriggerKind,
 )
@@ -2339,7 +2340,69 @@ _ACTIVITY_TRIGGERS: dict[tuple[str, str], ActivityTrigger] = {
     ("telekinesis", "ntGShpXYlBqLMZmK"): ActivityTrigger(
         kind=ActivityTriggerKind.LATER_USE, also_at_cast=True
     ),
+    # "When the spell ends, the target is Incapacitated and has a Speed of 0
+    # until the end of its next turn, as a wave of lethargy washes over it." —
+    # not with the cast; the host applies it when the spell ends.
+    ("haste", "rBQrZnq7cHkSUAK9"): ActivityTrigger(kind=ActivityTriggerKind.LATER_USE),
 }
+
+
+#: ``(spell slug, effect _id)`` → the mechanical changes the effect's own SRD 5.2
+#: sentence states but the pinned Foundry source leaves to a module: an effect
+#: on the TARGET that grants attack rolls against it advantage or disadvantage
+#: (``flags.grants.{advantage,disadvantage}.attack``, read by the engine's
+#: attack resolver). The pins live in ``tests/test_effect_change_corrections.py``.
+_EFFECT_CHANGE_CORRECTIONS: dict[tuple[str, str], list[PassiveEffectChange]] = {
+    # "For the duration, any creature has Disadvantage on attack rolls against you."
+    ("blur", "PsuBObX6WLcNEvUw"): [
+        PassiveEffectChange(key="flags.grants.disadvantage.attack", mode=5, value="1")
+    ],
+    # "Attack rolls against an affected creature or object have Advantage"
+    ("faerie-fire", "Y2i0OvwOixxag0ed"): [
+        PassiveEffectChange(key="flags.grants.advantage.attack", mode=5, value="1")
+    ],
+}
+
+
+#: ``(spell slug, activity _id)`` → the parent's effect ids the activity applies
+#: although its pinned Foundry ``effects[]`` is empty (a module applied them).
+#: Blur: "Your body becomes blurred." — the Blurred effect is the spell.
+_ACTIVITY_EFFECT_REF_CORRECTIONS: dict[tuple[str, str], list[str]] = {
+    ("blur", "dnd5eactivity000"): ["PsuBObX6WLcNEvUw"],
+}
+
+
+def _apply_activity_effect_ref_corrections(slug: str, activities: list[Activity]) -> list[Activity]:
+    """Append each activity's ``_ACTIVITY_EFFECT_REF_CORRECTIONS`` effect refs.
+    Copy-on-write; a ref already present is not added twice."""
+    out: list[Activity] = []
+    for act in activities:
+        wanted = _ACTIVITY_EFFECT_REF_CORRECTIONS.get((slug, act.id))
+        refs = getattr(act, "effects", None)
+        if wanted and refs is not None:
+            present = {ref.id for ref in refs}
+            missing = [AppliedEffectRef(_id=eid) for eid in wanted if eid not in present]
+            if missing:
+                act = act.model_copy(update={"effects": [*refs, *missing]})
+        out.append(act)
+    return out
+
+
+def _apply_effect_change_corrections(
+    slug: str, effects: list[PassiveEffect]
+) -> list[PassiveEffect]:
+    """Append each effect's ``_EFFECT_CHANGE_CORRECTIONS`` changes. Copy-on-write
+    like ``_apply_spell_damage_type_corrections``; a change already present is
+    not added twice."""
+    out: list[PassiveEffect] = []
+    for effect in effects:
+        extra = _EFFECT_CHANGE_CORRECTIONS.get((slug, effect.id))
+        if extra:
+            missing = [c for c in extra if c not in effect.changes]
+            if missing:
+                effect = effect.model_copy(update={"changes": [*effect.changes, *missing]})
+        out.append(effect)
+    return out
 
 
 def _apply_activity_triggers(slug: str, activities: list[Activity]) -> list[Activity]:
@@ -2414,16 +2477,20 @@ def translate_spell_yaml(
         duration=_spell_duration(system.get("duration") or {}),
         materials=_spell_materials(system.get("materials") or {}),
         preparation=_spell_preparation(system.get("preparation") or {}),
-        activities=_apply_activity_triggers(
+        activities=_apply_activity_effect_ref_corrections(
             slug,
-            _apply_affects_corrections(
+            _apply_activity_triggers(
                 slug,
-                _apply_spell_save_cover_overrides(
-                    slug, _apply_spell_damage_type_corrections(slug, _translate_activities(system))
+                _apply_affects_corrections(
+                    slug,
+                    _apply_spell_save_cover_overrides(
+                        slug,
+                        _apply_spell_damage_type_corrections(slug, _translate_activities(system)),
+                    ),
                 ),
             ),
         ),
-        passive_effects=_passive_effects(doc),
+        passive_effects=_apply_effect_change_corrections(slug, _passive_effects(doc)),
         provenance=_provenance(yaml_path, ingest_date, ingest_version),
         review=ReviewState(),
         foundry_uuid=_spell_foundry_uuid(yaml_path, doc),

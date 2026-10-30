@@ -75,13 +75,13 @@ them (C21: Spiritual Weapon, Summon Dragon and Magic Weapon).
 | | Count |
 |---|---|
 | Spells in the corpus | **339** |
-| Resolve to at least one mechanical activity | **234** (69%) |
-| Load but resolve to nothing | **105** (31%) |
-| …of which are concentration spells | **30** |
+| Resolve to at least one mechanical activity | **235** (69%) |
+| Load but resolve to nothing | **104** (31%) |
+| …of which are concentration spells | **29** |
 
 Inert concentration spells include staples a combat host will reach for:
-*Blur, Darkness, Fog Cloud, Wall of Force, Silent Image, Globe of
-Invulnerability, Expeditious Retreat.* Each still concentrates when cast
+*Darkness, Fog Cloud, Wall of Force, Silent Image, Globe of Invulnerability,
+Expeditious Retreat.* Each still concentrates when cast
 (C21), so it ends the caster's earlier concentration and later damage draws
 the Constitution save. Others in the inert set (*Alarm, Augury, Clairvoyance,
 Create Food and Water*) are out of scope for a combat engine by nature.

@@ -92,3 +92,28 @@ When combat ends, `end_combat` returns the final tuple on
 effects do not persist across combats. Cross-combat persistence is a host
 concern, not the engine's. This is a deliberate boundary: the engine is the
 in-combat effect authority and nothing more.
+
+## Which changes the engine reads
+
+An effect's `changes` use Foundry's keys, and a cast effect's changes count in
+combat the same way a class feature's do:
+
+| Key | Read as |
+|---|---|
+| `system.attributes.ac.bonus` | a bonus to AC (Shield, Shield of Faith) |
+| `system.attributes.ac.min`, `ac.calc` = `mage` | a floor under AC: 17, or 13 + Dexterity modifier (Barkskin, Mage Armor) |
+| `system.bonuses.{mwak,msak,rwak,rsak}.attack` / `.damage` | a bonus to attack rolls / damage of that kind (Bless, Bane, Rage) |
+| `system.bonuses.abilities.save`, `.check`, `.skill`; `system.abilities.<ab>.bonuses.save`; `system.skills.<sk>.bonuses.check` | a bonus to those D20 Tests (Bless, Guidance) |
+| `system.abilities.<ab>.save.roll.mode`, `.check.roll.mode` | `1` advantage, `-1` disadvantage on that ability's saves or checks (Haste, Hex) |
+| `system.traits.dr.value`, `di.value`, `dv.value` | resistance, immunity, vulnerability to the named damage type (Protection from Energy, Mind Blank) |
+| `system.traits.ci.value` | immunity to the named condition while the effect lasts (Heroism) |
+| `system.attributes.movement.walk` (add, multiply, override, downgrade, upgrade) | the walking Speed and the turn's movement budget (Longstrider, Haste, Slow) |
+| `system.bonuses.spell.dc` | the caster's spell save DC |
+| `flags.advantage.attack`, `flags.disadvantage.attack` | the bearer's own attack rolls |
+| `flags.grants.advantage.attack`, `flags.grants.disadvantage.attack` | attack rolls against the bearer (Faerie Fire, Blur) |
+| `flags.advantage.save[.<ability>]`, `flags.advantage.check[.<ability>]` and the `disadvantage` twins | the bearer's saves and checks (standalone `resolve_check`) |
+| `statuses` | the conditions the effect imposes |
+
+A flag counts when written as `override` or `add` with `true` or `1`, in any
+spelling. Keys not listed (`system.attributes.hp.tempmax`, senses, languages,
+item properties) are carried but not read; `BACKLOG.md` tracks them.

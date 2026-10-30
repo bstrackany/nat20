@@ -104,7 +104,6 @@ def test_published_spell_counts_match_the_corpus(
 def test_named_inert_concentration_spells_really_are_inert(canonical_dir: Path) -> None:
     """The page names specific staples as inert; verify each actually is."""
     for slug in (
-        "blur",
         "darkness",
         "fog-cloud",
         "wall-of-force",

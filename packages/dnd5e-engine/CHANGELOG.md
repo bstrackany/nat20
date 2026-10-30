@@ -36,9 +36,35 @@ caster takes. Requires the matching `dnd5e-srd-data`.
 - **Turn hooks `engine:activity-triggers-turn-end`** (first of the `turn_end`
   hooks) **and `engine:activity-triggers-turn-start`** (last of the
   `turn_start` hooks).
+- **More of a cast effect's changes count in combat.** `system.traits.di.value`
+  and `dv.value` (immunities and vulnerabilities, beside the resistances
+  already read); `system.abilities.<ab>.save.roll.mode` and `.check.roll.mode`
+  (Haste's Dexterity-save advantage, Hex's check disadvantage with the cursed
+  ability); `system.attributes.ac.min` and `ac.calc` "mage" (Barkskin's floor
+  of 17, Mage Armor's 13 + Dexterity modifier) as an AC floor
+  (`ActivityResolutionContext.passive_ac_floor`); `system.attributes.movement.walk`
+  in every mode (Longstrider's +10, Haste's ×2, Slow's ×0.5) in the effective
+  Speed and the turn-start movement budget; `system.traits.ci.value` (Heroism's
+  Frightened) on `Combatant.condition_immunities` while the effect lasts.
+- **`flags.grants.advantage.attack` / `flags.grants.disadvantage.attack`** on an
+  effect the TARGET carries give attack rolls against it advantage or
+  disadvantage (Faerie Fire, Blur), reported as the `"grant:target"` advantage
+  source. Every `flags.*` change now counts when written as `override` or
+  `add` with `true`/`1` in any spelling (`flag_change_is_set`), as the corpus
+  ships them.
+- **A Self-range spell lands on its caster** when the cast names no target,
+  whatever its activities carry (False Life's Temporary Hit Points).
 
 ### Changed
 
+- **An effect that ships both `rounds` and `seconds` lasts the longer of the
+  two.** Foundry packs carry a tracker `rounds` beside the real `seconds`
+  (Longstrider: `rounds: 1, seconds: 3600`); the round tick ended such a
+  spell after one round. Bless (`rounds: 10, seconds: 60`) is unchanged.
+- **The activity context carries the targets' effects as well as the
+  actor's** (`_effects_in_play`), so what an effect on the target grants an
+  attack against it can be read; the attacker-side flags still read only the
+  attacker's own.
 - **A cast no longer resolves an activity the corpus holds for later.** Acid
   Arrow deals its 2d4 at the end of the target's next turn, not at the cast;
   Searing Smite burns and saves at the start of each of the target's turns;

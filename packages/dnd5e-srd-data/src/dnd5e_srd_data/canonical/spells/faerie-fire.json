@@ -127,7 +127,14 @@
   "name": "Faerie Fire",
   "passive_effects": [
     {
-      "changes": [],
+      "changes": [
+        {
+          "key": "flags.grants.advantage.attack",
+          "mode": 5,
+          "priority": null,
+          "value": "1"
+        }
+      ],
       "description": "<p>For the duration, objects and affected creatures shed &amp;Reference[dimlight] in a 10-foot radius and can\u2019t benefit from the Invisible condition.</p><p>Attack rolls against an affected creature or object have Advantage if the attacker can see it.</p>",
       "disabled": false,
       "duration": {

@@ -133,9 +133,22 @@ class ActiveEffect(BaseModel):
         return sorted(statuses)
 
 
+def flag_change_is_set(change: ActiveEffectChange) -> bool:
+    """Is a ``flags.*`` change on? Foundry writes a flag as an ``override`` (or
+    an ``add``) whose value is ``true``/``1``, a boolean or a string depending on
+    the editor; the SRD corpus ships strings. Any other mode or value is off."""
+    if change.mode not in ("override", "add"):
+        return False
+    value = change.value
+    if isinstance(value, bool):
+        return value
+    return str(value).strip().lower() in ("1", "true")
+
+
 __all__ = [
     "ActiveEffect",
     "ActiveEffectChange",
     "ActiveEffectDuration",
     "ChangeMode",
+    "flag_change_is_set",
 ]

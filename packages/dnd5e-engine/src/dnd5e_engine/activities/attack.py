@@ -83,6 +83,7 @@ from dnd5e_engine.rules.conditions import (
     conditions_grant_advantage_on_attack,
 )
 from dnd5e_engine.spatial import cover_bonus
+from dnd5e_engine.types.effects import flag_change_is_set
 
 if TYPE_CHECKING:
     from dnd5e_srd_data.schema.common import AttackActivity, DamagePart, DamagePartBlock
@@ -205,8 +206,11 @@ def resolve_attack(
         # attack" a pre-armed reaction can land an AC-bonus active
         # effect on the target between the trigger and this comparison; the
         # natural roll itself is never touched, only this comparison.
+        # An effect that sets a floor under the target's AC (Barkskin's "AC
+        # can't be less than 17", Mage Armor's 13 + Dexterity modifier) lifts
+        # the base before cover and bonuses.
         effective_ac = (
-            target.ac
+            max(target.ac, ctx.passive_ac_floor.get(target.entity_id, 0))
             + cover_bonus(ctx.target_cover.get(target.entity_id, "none"))
             + ctx.passive_ac_bonus.get(target.entity_id, 0)
         )
@@ -367,7 +371,7 @@ def _resolve_cleave_chain(
     if attack_bonus_expr:
         total += roll_expr(attack_bonus_expr, ctx.rng)
     effective_ac = (
-        candidate.ac
+        max(candidate.ac, ctx.passive_ac_floor.get(cid, 0))
         + cover_bonus(ctx.target_cover.get(cid, "none"))
         + ctx.passive_ac_bonus.get(cid, 0)
     )
@@ -474,6 +478,7 @@ def _attack_roll_sources(
         # pierce THIS target's Invisible condition?
         target_invisibility_pierced=ctx.target_invisibility_pierced.get(target.entity_id, False),
     )
+    target_grants_adv, target_grants_dis = target_grants_flags(ctx, target.entity_id)
     adv_sources: list[AdvantageSource] = []
     dis_sources: list[AdvantageSource] = []
     if attacker_has_advantage:
@@ -482,12 +487,16 @@ def _attack_roll_sources(
         adv_sources.append("condition:attacker")
     if target_cond_adv:
         adv_sources.append("condition:target")
+    if target_grants_adv:
+        adv_sources.append("grant:target")
     if attacker_has_disadvantage:
         dis_sources.append("flag")
     if attacker_cond_dis:
         dis_sources.append("condition:attacker")
     if target_cond_dis:
         dis_sources.append("condition:target")
+    if target_grants_dis:
+        dis_sources.append("grant:target")
     # C16b — SRD 5.2 "Unseen Attackers and Targets": "When you make an
     # attack roll against a target you can't see, you have Disadvantage";
     # "When a creature can't see you, you have Advantage on attack rolls
@@ -629,7 +638,7 @@ def attacker_advantage_flags(ctx: ActivityResolutionContext) -> tuple[bool, bool
         if eff.target_id != ctx.caster.entity_id:
             continue
         for ch in eff.changes:
-            if ch.mode != "override" or ch.value is not True:
+            if not flag_change_is_set(ch):
                 continue
             if ch.key == "flags.advantage.attack":
                 has_advantage = True
@@ -639,6 +648,30 @@ def attacker_advantage_flags(ctx: ActivityResolutionContext) -> tuple[bool, bool
     if has_advantage and has_disadvantage:
         return False, False
     return has_advantage, has_disadvantage
+
+
+def target_grants_flags(ctx: ActivityResolutionContext, target_id: str) -> tuple[bool, bool]:
+    """Read the TARGET's ``flags.grants.advantage.attack`` /
+    ``flags.grants.disadvantage.attack`` changes: an effect on the creature
+    being attacked that gives every attack roll against it advantage (Faerie
+    Fire: "Attack rolls against an affected creature or object have
+    Advantage") or disadvantage (Blur: "any creature has Disadvantage on
+    attack rolls against you"). Both present cancel to normal."""
+    grants_advantage = False
+    grants_disadvantage = False
+    for eff in ctx.active_effects:
+        if eff.target_id != target_id:
+            continue
+        for ch in eff.changes:
+            if not flag_change_is_set(ch):
+                continue
+            if ch.key == "flags.grants.advantage.attack":
+                grants_advantage = True
+            elif ch.key == "flags.grants.disadvantage.attack":
+                grants_disadvantage = True
+    if grants_advantage and grants_disadvantage:
+        return False, False
+    return grants_advantage, grants_disadvantage
 
 
 def sneak_attack_dice(ctx: ActivityResolutionContext) -> str | None:
