@@ -109,7 +109,7 @@ where both used to accept it.
 engine's `PlayerIntent`: an `intent_type` and any of its optional fields —
 `weapon_id`; `spell_id` with `slot_level`; `target_id` or `target_ids`;
 `target_zone_id`; `direction` and `excluded_target_ids` for an area;
-`feature_id` with `activity_id`; `form_id`; `stat_block_action_id` (an attack
+`feature_id` with `activity_id` (also on a cast, to resolve one of the spell's activities); `form_id`; `stat_block_action_id` (an attack
 from a summon's or a Wild Shape form's stat block); `use_bonus_action`; and the
 rest. The actor can be a character or a creature it summoned. An unknown key
 or intent type is refused with 422 and reaches nothing.

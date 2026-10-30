@@ -1295,8 +1295,10 @@ zone + apply logic:
   Storm of Vengeance's turn-2-to-5 activities, Earthquake's "End of Turn
   Fissures", Delayed Blast Fireball's bead activities and the start-of-turn
   activities of Ensnaring Strike, Searing Smite, Stinking Cloud and Tsunami
-  have the same shape. Needs a per-activity timing signal and a turn-boundary
-  producer (see "No ongoing-damage producer").
+  have the same shape. A host can name the cast-time activity with
+  `PlayerIntent.activity_id`, but nothing fires the rest later. Needs a
+  per-activity timing signal and a turn-boundary producer (see "No
+  ongoing-damage producer").
   (`packages/dnd5e-engine/src/dnd5e_engine/orchestrator.py::submit_player_intent`)
 - **An item's hazard area saves at use time, not when a creature enters it
   (2026-10-04, C26a).** SRD 5.2 Ball Bearings and Caltrops: "A creature that

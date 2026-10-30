@@ -296,6 +296,9 @@ class PlayerIntent(BaseModel):
     # Cunning Strike's four options). Names one of the feature's activity ids.
     # ``None`` (the common case) leaves single-activity features unchanged and
     # keeps the safe no-op reject for a multi-activity feature (never guess).
+    # On a ``cast_spell`` it names the one spell activity to resolve (Sunbeam's
+    # Initial Cast without its Create New Sunbeam); ``None`` resolves them all,
+    # and an id the spell lacks is ``CastFailed(reason="activity_invalid")``.
     activity_id: str | None = None
     slot_level: int | None = None
     # Charges to spend on a variable-cost item invocation (wand upcast).
@@ -11136,7 +11139,7 @@ def _reject_over_count_targets(
     spell = get_lib_loader().get_spell(intent.spell_id)
     if spell is None:
         return False
-    activity = _find_count_activity(list(spell.activities))
+    activity = _find_count_activity(_cast_activities(spell, intent))
     if activity is None:
         return False
     cast_level = intent.slot_level if intent.slot_level is not None else spell.level
@@ -11163,11 +11166,44 @@ def _reject_over_count_targets(
     return False
 
 
+def _cast_activities(spell: Spell, intent: PlayerIntent) -> list[Any]:
+    """The activities a cast resolves: the one ``intent.activity_id`` names, or
+    every activity the spell carries when it names none. An ``activity_id`` that
+    names none of them selects nothing (``_reject_unknown_cast_activity`` has
+    already refused that cast)."""
+    if intent.activity_id:
+        return [a for a in spell.activities if a.id == intent.activity_id]
+    return list(spell.activities)
+
+
+def _reject_unknown_cast_activity(
+    live: _LiveCombat, current: Combatant, actor_id: str, intent: PlayerIntent
+) -> bool:
+    """``CastFailed(reason="activity_invalid")`` for a cast whose
+    ``activity_id`` names none of the spell's activities. Runs before the slot
+    gate, so the refused cast spends nothing.
+
+    Returns ``True`` iff the cast was REJECTED (the turn already advanced — the
+    caller must return)."""
+    if not (intent.intent_type == "cast_spell" and intent.spell_id and intent.activity_id):
+        return False
+    spell = get_lib_loader().get_spell(intent.spell_id)
+    if spell is None or _cast_activities(spell, intent):
+        return False
+    _emit(
+        live,
+        CastFailed(actor_id=current.entity_id, spell_id=intent.spell_id, reason="activity_invalid"),
+    )
+    _end_turn_and_advance(live, actor_id)
+    return True
+
+
 def _apply_pre_slot_cast_gates(
     live: _LiveCombat, current: Combatant, actor_id: str, intent: PlayerIntent
 ) -> bool:
     """Run every gate that MUST fire before ``_consume_spell_slot`` — the
-    in-combat-ritual rejection, a Counterspell interrupt
+    in-combat-ritual rejection, an ``activity_id`` the spell lacks
+    (``_reject_unknown_cast_activity``), a Counterspell interrupt
     (``_drain_counterspell_reaction``) and the target-count validation
     (``_reject_over_count_targets``) all need to reject (when applicable)
     before the slot is ever touched, so neither an illegal ritual cast, a
@@ -11179,9 +11215,10 @@ def _apply_pre_slot_cast_gates(
     ``as_ritual=True`` cast is illegal regardless of anything else about the
     intent, so it must never reach ``_drain_counterspell_reaction`` — an
     armed Counterspell must not be triggered (or its slot spent) by a cast
-    that was never going to resolve. The remaining two checks are
-    independent and order-insensitive (each returns ``False`` fast when not
-    applicable to the intent).
+    that was never going to resolve; an unknown ``activity_id`` follows it
+    for the same reason. The remaining two checks are independent and
+    order-insensitive (each returns ``False`` fast when not applicable to the
+    intent).
 
     Returns ``True`` iff any gate emitted ``CastFailed`` and already
     advanced the turn — the caller must return.
@@ -11201,6 +11238,8 @@ def _apply_pre_slot_cast_gates(
             ),
         )
         _end_turn_and_advance(live, actor_id)
+        return True
+    if _reject_unknown_cast_activity(live, current, actor_id, intent):
         return True
     if _drain_counterspell_reaction(live, current, actor_id, intent):
         return True
@@ -11389,7 +11428,7 @@ def _resolve_intent_activities(
     elif intent.intent_type == "cast_spell" and intent.spell_id:
         cast_spell = get_lib_loader().get_spell(intent.spell_id)
         if cast_spell is not None:
-            activities = list(cast_spell.activities)
+            activities = _cast_activities(cast_spell, intent)
             # SRD 5.2 §Spellcasting — the real class->ability mapping
             # (cleric -> wis, wizard -> int, ...), read off the caster's own
             # class doc, unless the spell has its own (Magic Initiate). ``None``

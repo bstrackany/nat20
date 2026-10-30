@@ -136,6 +136,9 @@ CastFailedReason = Literal[
     # or cast spells" — a shape-shifted caster's cast is refused, and so is a
     # summoned creature's, whose stat block has no Spellcasting. (C21)
     "no_spellcasting",
+    # A ``cast_spell`` whose ``activity_id`` names none of the spell's
+    # activities. Refused before the slot is spent.
+    "activity_invalid",
 ]
 
 IntentType = Literal[

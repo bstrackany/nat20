@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`PlayerIntent.activity_id` on a `cast_spell`** — names the one spell
+  activity the cast resolves (Sunbeam's Initial Cast without its Create New
+  Sunbeam, Acid Arrow's attack without its lingering damage), as it already
+  does on a `use_feature`. Omitted, every activity resolves as before.
+- **`CastFailedReason` `"activity_invalid"`** — a cast whose `activity_id`
+  names none of the spell's activities, refused before the slot is spent.
+
 ## [0.7.0]
 
 Lockstep release with `dnd5e-srd-data` 0.7.0 and `nat20-bridge` 0.7.0. The
