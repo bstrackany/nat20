@@ -60,6 +60,9 @@ The subject is each creature bearing an effect of the use (`subject: target`,
 the default) or the creature that used it (`subject: caster`). The engine
 holds the use while any effect it applied remains on a creature — or, when it
 applied none, for the spell's duration — and the triggers end with it. A
+character's features and feats are held for the whole combat, so a feature's
+"when you hit" rider fires on every hit; `once_per_turn` caps it at one per
+turn. A
 fired activity resolves through the same context and resolver as the cast, at
 the level the spell was cast at, after an `ActivityTriggered` event names the
 source, the activity, the moment and the creatures. `once` fires the activity

@@ -4,6 +4,7 @@
   "description": "(Prerequisite: Fighting Style Feature)\n\nWhen you make an extra attack as a result of using a weapon that has the Light property, you can add your ability modifier to the damage of that attack if you aren't already adding it to the damage.\n\nFoundry Note\n\nThis feature is not automated. You can add your modifier in the Situational Bonus field of the damage roll.",
   "entry_kind": "feat",
   "name": "Two-Weapon Fighting",
+  "passive_effects": [],
   "prerequisites": [
     {
       "feats": [

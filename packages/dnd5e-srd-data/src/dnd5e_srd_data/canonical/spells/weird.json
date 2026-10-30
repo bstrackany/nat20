@@ -219,6 +219,7 @@
         "ends_on_save": true,
         "kind": "turn_end",
         "once": false,
+        "once_per_turn": false,
         "subject": "target"
       },
       "uses": {

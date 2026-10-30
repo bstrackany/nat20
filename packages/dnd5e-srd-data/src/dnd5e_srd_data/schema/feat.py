@@ -24,7 +24,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-from dnd5e_srd_data.schema.common import Activity, Provenance, ReviewState
+from dnd5e_srd_data.schema.common import Activity, PassiveEffect, Provenance, ReviewState
 
 
 class FeatCategory(StrEnum):
@@ -60,6 +60,12 @@ class Feat(BaseModel):
     otherwise in a "Repeatable" subsection." Foundry's
     ``system.prerequisites.repeatable``: true for Ability Score Improvement,
     Magic Initiate and Skilled."""
+    passive_effects: list[PassiveEffect] = Field(default_factory=list)
+    """The feat's Foundry ``effects[]``: the always-on changes a character with
+    the feat carries (a Fighting Style's bonus), applied like a class
+    feature's. Empty in the shipped SRD corpus (the pinned sources' feat
+    effects were not translated when it was built); a consumer's own feats set
+    it."""
     activities: list[Activity] = Field(default_factory=list)
     """Translated ``system.activities`` (reusing the shared ``Activity``
     discriminated union). Empty for the 13 passive feats; populated for the

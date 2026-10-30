@@ -405,6 +405,20 @@ def _always_on_changes(features: Sequence[str], loader: AssetLoader) -> list[Pas
     return changes
 
 
+def _always_on_feat_changes(feats: Sequence[str], loader: AssetLoader) -> list[PassiveEffectChange]:
+    """Changes of every always-on passive effect on the character's feats — a
+    feat's effects count like a class feature's. An unresolved slug is skipped."""
+    changes: list[PassiveEffectChange] = []
+    for slug in feats:
+        feat = loader.get_feat(slug)
+        if feat is None:
+            continue
+        for passive in feat.passive_effects:
+            if passive.transfer and not passive.disabled:
+                changes.extend(passive.changes)
+    return changes
+
+
 def _hit_points(
     spec: CharacterBuildSpec,
     die_sizes: Mapping[str, int],
@@ -761,6 +775,7 @@ def derive_sheet(spec: CharacterBuildSpec, *, loader: AssetLoader) -> DerivedShe
         ),
     ]
     _check_repeats(feats, loader)
+    changes = [*changes, *_always_on_feat_changes(feats, loader)]
     spell_abilities, slotless_casts = _magic_initiate_spells(choices.magic_initiate, feats, loader)
     modifiers = {name: ability_modifier(score) for name, score in scores.items()}
     pb = proficiency_bonus(spec.level)

@@ -4,6 +4,7 @@
   "description": "You gain the following benefits.\n\nAbility Score Increase. Increase one ability score of your choice by 1, to a maximum of 30.\n\nPeerless Aim. When you miss with an attack roll, you can hit instead. Once you use this benefit, you can't use it again until the start of your next turn.",
   "entry_kind": "feat",
   "name": "Boon of Combat Prowess",
+  "passive_effects": [],
   "prerequisites": [
     {
       "feats": [],

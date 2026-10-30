@@ -506,10 +506,12 @@ counts are pinned by `packages/dnd5e-engine/tests/test_capability_matrix.py`.
   used, since the feature gate covers class, subclass and species features
   only. A Polymorphed character keeps its feats in combat, though SRD 5.2
   Polymorph replaces "The target's game statistics" (Wild Shape keeps
-  "feats"). The dataset `Feat` schema has no `passive_effects`, so the effects
-  Foundry ships on feats (Archery's and Defense's among them) are dropped at
-  translation. A feat's free-text `requirement` (Grappler's "Strength or
-  Dexterity 13+") is never validated.
+  "feats"). The dataset `Feat` schema carries `passive_effects` since
+  2026-10-30 and the engine applies them like a feature's, but the shipped
+  SRD feats have none: the effects Foundry ships on them (Archery's and
+  Defense's among them) were dropped when the corpus was built, so filling
+  them is a regen (maintainer flow) or a hand correction. A feat's free-text
+  `requirement` (Grappler's "Strength or Dexterity 13+") is never validated.
   (`packages/dnd5e-engine/src/dnd5e_engine/build_spec.py::_asi_level_feats`,
   `packages/dnd5e-srd-data/src/dnd5e_srd_data/schema/feat.py`,
   `packages/dnd5e-srd-data/tools/translators/foundry.py`)

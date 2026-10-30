@@ -68,6 +68,7 @@ def test_an_absent_trigger_is_left_out_of_a_dump() -> None:
         "attack": "",
         "against_bearer": False,
         "once": True,
+        "once_per_turn": False,
         "ends_on_save": False,
         "also_at_cast": False,
     }

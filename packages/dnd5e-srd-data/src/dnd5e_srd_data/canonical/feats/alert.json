@@ -4,6 +4,7 @@
   "description": "You gain the following benefits.\n\nInitiative Proficiency. When you roll Initiative, you can add your Proficiency Bonus to the roll.\n\nInitiative Swap. Immediately after you roll Initiative, you can swap your Initiative with the Initiative of one willing ally in the same combat. You can't make this swap if you or the ally has the &amp;Reference[Incapacitated] condition.\n\nFoundry Note\n\nThis feature automatically includes the bonus to your Initiative.",
   "entry_kind": "feat",
   "name": "Alert",
+  "passive_effects": [],
   "prerequisites": [],
   "provenance": {
     "ingest_date": "2026-05-30",

@@ -687,7 +687,7 @@ class ActivityTriggered(BaseModel):
     type: Literal["activity_triggered"] = "activity_triggered"
     actor_id: str
     source_id: str
-    source_kind: Literal["spell", "feature", "item"]
+    source_kind: Literal["spell", "feature", "item", "feat"]
     activity_id: str
     activity_name: str
     trigger: ActivityTriggerMoment

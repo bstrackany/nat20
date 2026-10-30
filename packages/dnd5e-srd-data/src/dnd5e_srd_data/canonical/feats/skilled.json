@@ -4,6 +4,7 @@
   "description": "You gain proficiency in any combination of three skills or tools of your choice.\n\nRepeatable. You can take this feat more than once.",
   "entry_kind": "feat",
   "name": "Skilled",
+  "passive_effects": [],
   "prerequisites": [],
   "provenance": {
     "ingest_date": "2026-05-30",

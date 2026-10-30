@@ -4,6 +4,7 @@
   "description": "(Prerequisite: Fighting Style Feature)\n\nYou gain a +2 bonus to attack rolls you make with Ranged weapons.\n\nFoundry Note\n\nThis feature includes an Active Effect which adds the bonus to Ranged weapon attack rolls.",
   "entry_kind": "feat",
   "name": "Archery",
+  "passive_effects": [],
   "prerequisites": [
     {
       "feats": [

@@ -92,6 +92,7 @@
         "ends_on_save": false,
         "kind": "hits",
         "once": false,
+        "once_per_turn": false,
         "subject": "caster"
       },
       "uses": {
@@ -389,6 +390,7 @@
         "ends_on_save": false,
         "kind": "later_use",
         "once": false,
+        "once_per_turn": false,
         "subject": "target"
       },
       "uses": {

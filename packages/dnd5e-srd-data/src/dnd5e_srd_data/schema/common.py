@@ -210,7 +210,11 @@ class ActivityTrigger(BaseModel, frozen=True):
     activity with ``ends_on_save`` ends the use's effects on a creature that
     succeeds (Searing Smite). ``also_at_cast`` makes a ``later_use`` activity
     fire with the cast as well (Call Lightning's bolt, which the caster then
-    repeats).
+    repeats). ``once_per_turn`` fires the activity at most once in any one turn
+    ("Once per turn, when you hit a creature with a weapon attack").
+
+    A feature or feat a character has carries its triggers for the whole
+    combat: the engine holds every such always-on activity from the start.
     """
 
     kind: ActivityTriggerKind
@@ -218,6 +222,7 @@ class ActivityTrigger(BaseModel, frozen=True):
     attack: Literal["", "melee", "ranged"] = ""
     against_bearer: bool = False
     once: bool = False
+    once_per_turn: bool = False
     ends_on_save: bool = False
     also_at_cast: bool = False
 

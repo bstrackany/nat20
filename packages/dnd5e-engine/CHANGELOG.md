@@ -54,6 +54,18 @@ caster takes. Requires the matching `dnd5e-srd-data`.
   ships them.
 - **A Self-range spell lands on its caster** when the cast names no target,
   whatever its activities carry (False Life's Temporary Hit Points).
+- **A character's features and feats are in play for the whole combat.**
+  `start_combat` seeds the live-read changes of their always-on effects
+  (`transfer`, not `disabled`) as permanent effects on the character —
+  attack, damage and D20-Test bonuses, save and check roll modes, advantage
+  flags and grants, vulnerabilities; AC, Speed, Hit Points, senses,
+  resistances and condition immunities stay the sheet derivation's — and
+  holds every activity they carry a trigger for as a permanent use
+  (`HeldUse.permanent`): a "when you hit" rider fires on each hit. A feat's
+  effects now count in `derive_sheet` and at combat start like a class
+  feature's (`Feat.passive_effects`, `dnd5e-srd-data` unreleased).
+- **`ActivityTrigger.once_per_turn`** — the activity fires at most once in any
+  one turn ("Once per turn, when you hit a creature").
 
 ### Changed
 

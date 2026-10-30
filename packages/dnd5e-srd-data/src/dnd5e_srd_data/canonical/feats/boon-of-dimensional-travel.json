@@ -87,6 +87,7 @@
   "description": "You gain the following benefits.\n\nAbility Score Increase. Increase one ability score of your choice by 1, to a maximum of 30.\n\nBlink Steps. Immediately after you take the Attack action or the Magic action, you can teleport up to 30 feet to an unoccupied space you can see.",
   "entry_kind": "feat",
   "name": "Boon of Dimensional Travel",
+  "passive_effects": [],
   "prerequisites": [
     {
       "feats": [],

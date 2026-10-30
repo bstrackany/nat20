@@ -96,7 +96,10 @@ in-combat effect authority and nothing more.
 ## Which changes the engine reads
 
 An effect's `changes` use Foundry's keys, and a cast effect's changes count in
-combat the same way a class feature's do:
+combat the same way a class feature's or a feat's do (a character's always-on
+effects are seeded as permanent effects at `start_combat`, apart from the AC,
+Speed, Hit Point, sense, resistance and condition-immunity keys the sheet
+derivation already folds):
 
 | Key | Read as |
 |---|---|

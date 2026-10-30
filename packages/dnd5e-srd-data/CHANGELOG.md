@@ -19,6 +19,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the use" and is left out of a dump, so unmarked entries are unchanged on
   disk.
 
+- **`Feat.passive_effects`** — a feat's Foundry `effects[]`, carried like a
+  feature's; the translator now keeps them. Empty for the 17 shipped SRD feats
+  (their sources' effects were not translated when the corpus was built).
+- **`ActivityTrigger.once_per_turn`** — the activity fires at most once in any
+  one turn.
 - **Two more translator tables** keyed by the SRD 5.2 sentence they follow:
   `_EFFECT_CHANGE_CORRECTIONS` adds the change an effect's text states but its
   Foundry source left to a module — Blur's "any creature has Disadvantage on

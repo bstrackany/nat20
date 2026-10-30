@@ -48,7 +48,7 @@ __all__ = [
 #: ``(target_id, effect.id, effect.origin)`` — the effect lifecycle's key.
 EffectIdentity = tuple[str, str, str]
 
-TriggerSource = Literal["spell", "feature", "item"]
+TriggerSource = Literal["spell", "feature", "item", "feat"]
 
 
 @dataclass
@@ -75,6 +75,10 @@ class HeldUse:
     rounds_remaining: int | None = None
     #: Activity ids whose ``once`` trigger has fired.
     spent: set[str] = field(default_factory=set)
+    #: A feature or feat the owner has for the whole combat: the use never ends.
+    permanent: bool = False
+    #: For ``once_per_turn``: the ``(round, actor)`` turn each activity last fired in.
+    fired_turns: dict[str, tuple[int, str | None]] = field(default_factory=dict)
 
 
 def trigger_of(activity: Any) -> ActivityTrigger | None:
@@ -117,8 +121,11 @@ def bearers_of(use: HeldUse, active_effects: Mapping[str, Sequence[Any]]) -> lis
 
 
 def use_is_live(use: HeldUse, active_effects: Mapping[str, Sequence[Any]]) -> bool:
-    """Does the use still hold its triggers? While an effect of it remains on a
-    creature; a use that applied none lasts its ``rounds_remaining``."""
+    """Does the use still hold its triggers? A permanent one always; otherwise
+    while an effect of it remains on a creature, or, for a use that applied
+    none, for its ``rounds_remaining``."""
+    if use.permanent:
+        return True
     if use.effects:
         return any(_present(identity, active_effects) for identity in use.effects)
     return use.rounds_remaining is not None and use.rounds_remaining > 0

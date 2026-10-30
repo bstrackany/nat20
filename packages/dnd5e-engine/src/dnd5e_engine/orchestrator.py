@@ -7586,6 +7586,12 @@ def _pc_condition_immunities(pc: PartyMemberSpec) -> list[str]:
         for passive in feature.passive_effects:
             if passive.transfer and not passive.disabled:
                 changes.extend(passive.changes)
+    for feat_slug in pc.feats:
+        feat = loader.get_feat(feat_slug)
+        if feat is not None:
+            for passive in feat.passive_effects:
+                if passive.transfer and not passive.disabled:
+                    changes.extend(passive.changes)
     derived = interpret_passive_stats(changes=changes, trait_grants=(), species_senses=None)
     for ci in derived.condition_immunities:
         if ci not in immunities:
@@ -7856,6 +7862,98 @@ def _resolve_topology(
                 f"is out of bounds or blocked"
             )
     return grid
+
+
+#: Changes of an always-on feature or feat effect the engine reads LIVE, from
+#: ``live.active_effects``, and the sheet derivation does not already fold into
+#: the ``PartyMemberSpec`` (AC, Speed, Hit Points, senses, resistances and
+#: condition immunities are the build's: seeding them again would count twice).
+_LIVE_ALWAYS_ON_KEY_PREFIXES: Final[tuple[str, ...]] = (
+    "system.bonuses.",
+    "flags.advantage.",
+    "flags.disadvantage.",
+    "flags.grants.",
+    "system.traits.dv.value",
+)
+_LIVE_ALWAYS_ON_KEY_SUFFIXES: Final[tuple[str, ...]] = (".save.roll.mode", ".check.roll.mode")
+
+
+def _always_on_sources(pc: Combatant) -> list[tuple[TriggerSource, Any]]:
+    """The features the character's class, subclass and species grant at its
+    level, then its feats — each with the kind a held use records."""
+    loader = get_lib_loader()
+    sources: list[tuple[TriggerSource, Any]] = []
+    for slug in sorted(_granted_feature_slugs(pc)):
+        feature = loader.get_feature(slug)
+        if feature is not None:
+            sources.append(("feature", feature))
+    for slug in pc.feats:
+        feat = loader.get_feat(slug)
+        if feat is not None:
+            sources.append(("feat", feat))
+    return sources
+
+
+def _seed_always_on(live: _LiveCombat, pc: Combatant) -> None:
+    """A character's features and feats are in play for the whole combat: seed
+    the live-read changes of their always-on effects (``transfer`` and not
+    ``disabled``) as permanent ``ActiveEffect``s on the character, and hold
+    every activity they carry a trigger for as a permanent use (a "when you
+    hit" rider, a start-of-turn heal). No event is emitted: nothing happened,
+    the character arrived that way."""
+    for kind, source in _always_on_sources(pc):
+        for passive in source.passive_effects:
+            if not passive.transfer or passive.disabled:
+                continue
+            changes = [
+                _passive_change_to_active_change(ch)
+                for ch in passive.changes
+                if ch.key.startswith(_LIVE_ALWAYS_ON_KEY_PREFIXES)
+                or ch.key.endswith(_LIVE_ALWAYS_ON_KEY_SUFFIXES)
+            ]
+            if not changes:
+                continue
+            live.active_effects.setdefault(pc.entity_id, []).append(
+                ActiveEffect(
+                    id=f"effect:{source.slug}:{passive.id or _name_slug_of(passive.name)}",
+                    name=passive.name or source.name,
+                    origin=f"{kind}:{source.slug}:{pc.entity_id}",
+                    target_id=pc.entity_id,
+                    changes=changes,
+                    flags={"always_on": True},
+                )
+            )
+        waiting = [a for a in triggered_activities(source.activities) if not is_later_use(a)]
+        if waiting:
+            live.held_uses.append(
+                HeldUse(
+                    owner_id=pc.entity_id,
+                    source_kind=kind,
+                    source_slug=source.slug,
+                    source_name=source.name,
+                    slot_level=None,
+                    base_level=None,
+                    spellcasting_ability=None,
+                    activities=waiting,
+                    passive_effects=list(source.passive_effects),
+                    permanent=True,
+                )
+            )
+
+
+def _passive_change_to_active_change(change: Any) -> ActiveEffectChange:
+    """A corpus ``PassiveEffectChange`` (Foundry's int mode) as the runtime change."""
+    mode = {0: "custom", 1: "multiply", 2: "add", 3: "downgrade", 4: "upgrade", 5: "override"}
+    return ActiveEffectChange(
+        key=change.key,
+        mode=mode.get(int(change.mode), "custom"),
+        value=change.value,
+        priority=change.priority if change.priority is not None else 20,
+    )
+
+
+def _name_slug_of(name: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-") or "effect"
 
 
 def _seed_active_effects(live: _LiveCombat, active_effects: Sequence[ActiveEffect]) -> None:
@@ -8158,6 +8256,9 @@ async def start_combat(
     # is NOT seeded here — it requires a failed-save record we don't have
     # at seed time; the next runtime save will repopulate as needed.
     _seed_active_effects(live, active_effects)
+    for pc in live.initiative:
+        if pc.entity_type == "Character":
+            _seed_always_on(live, pc)
 
     # C12 — a Character HYDRATED into combat already at 0 HP is Unconscious
     # (SRD 5.2 "Dropping to 0 Hit Points"). The runtime fold hangs off the
@@ -11637,6 +11738,11 @@ def _fire_triggered_activity(
     target = _find_combatant(live, target_id)
     if trigger is None or owner is None or target is None or not target.is_alive:
         return
+    this_turn = (live.round_number, live.current_actor_id)
+    if trigger.once_per_turn:
+        if use.fired_turns.get(activity.id) == this_turn:
+            return
+        use.fired_turns[activity.id] = this_turn
     _emit_activity_triggered(live, use, activity, subject_id=subject_id, target_id=target_id)
     payload = _build_hydration_payload(live, caster=owner)
     actx = build_activity_context(

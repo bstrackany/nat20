@@ -4,6 +4,7 @@
   "description": "(Prerequisite: Fighting Style Feature)\n\nWhile you're wearing Light, Medium, or Heavy armor, you gain a +1 bonus to Armor Class.\n\nFoundry Note\n\nThis feature includes an Active Effect which provides the Armor Class bonus. Disable it when you are not wearing armor.",
   "entry_kind": "feat",
   "name": "Defense",
+  "passive_effects": [],
   "prerequisites": [
     {
       "feats": [

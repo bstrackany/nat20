@@ -3187,6 +3187,7 @@ def translate_feat_yaml(
         category=_feat_category(system),
         prerequisites=_feat_prerequisites(system),
         repeatable=bool((system.get("prerequisites") or {}).get("repeatable")),
+        passive_effects=_passive_effects(doc),
         activities=_translate_activities(system),
         provenance=_provenance(yaml_path, ingest_date, ingest_version),
         review=ReviewState(),
