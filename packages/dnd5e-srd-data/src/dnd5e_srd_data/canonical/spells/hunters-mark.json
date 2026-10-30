@@ -87,6 +87,15 @@
           "width": ""
         }
       },
+      "trigger": {
+        "against_bearer": true,
+        "also_at_cast": false,
+        "attack": "",
+        "ends_on_save": false,
+        "kind": "hits",
+        "once": false,
+        "subject": "caster"
+      },
       "uses": {
         "max": "",
         "recovery": [],
@@ -274,6 +283,15 @@
           "units": "",
           "width": ""
         }
+      },
+      "trigger": {
+        "against_bearer": false,
+        "also_at_cast": false,
+        "attack": "",
+        "ends_on_save": false,
+        "kind": "later_use",
+        "once": false,
+        "subject": "target"
       },
       "uses": {
         "max": "",

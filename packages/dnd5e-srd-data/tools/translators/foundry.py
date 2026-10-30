@@ -88,7 +88,13 @@ from dnd5e_srd_data import (
     Weapon,
     WeaponProperty,
 )
-from dnd5e_srd_data.schema.common import ReactionCondition, ReactionTriggerKind
+from dnd5e_srd_data.schema.common import (
+    ActivityTrigger,
+    ActivityTriggerKind,
+    ActivityTriggerSubject,
+    ReactionCondition,
+    ReactionTriggerKind,
+)
 from tools.translators.prose_cleanup import cleanup_prose
 
 ROOT = Path(__file__).resolve().parent.parent.parent
@@ -2260,6 +2266,94 @@ def _apply_affects_corrections(slug: str, activities: list[Activity]) -> list[Ac
     return out
 
 
+#: ``(spell slug, activity _id)`` → when that activity fires. Foundry fires every
+#: activity on use and has no field for a later moment, so the SRD 5.2 sentence
+#: that names the moment is the only source; each entry quotes it. Area and
+#: turn-count moments (Stinking Cloud's cloud, Storm of Vengeance's rounds,
+#: Delayed Blast Fireball's bead) are not expressible yet and stay unmarked.
+#: The pins live in ``tests/test_activity_triggers.py``.
+_ACTIVITY_TRIGGERS: dict[tuple[str, str], ActivityTrigger] = {
+    # "On a hit, the target takes 4d4 Acid damage and 2d4 Acid damage at the end
+    # of its next turn."
+    ("acid-arrow", "uAyE5DrJp0YpElcw"): ActivityTrigger(
+        kind=ActivityTriggerKind.TURN_END, once=True
+    ),
+    # "At the start of each of its turns until the spell ends, the target takes
+    # 1d6 Fire damage and then makes a Constitution saving throw. On a failed
+    # save, the spell continues. On a successful save, the spell ends." (The
+    # extra 1d6 "as you hit the target" is the cast itself: a Bonus Action
+    # "immediately after hitting a target".)
+    ("searing-smite", "dnd5eactivity000"): ActivityTrigger(
+        kind=ActivityTriggerKind.TURN_START, ends_on_save=True
+    ),
+    # "you deal an extra 1d6 Necrotic damage to the target whenever you hit it
+    # with an attack roll"
+    ("hex", "dnd5eactivity000"): ActivityTrigger(
+        kind=ActivityTriggerKind.HITS, subject=ActivityTriggerSubject.CASTER, against_bearer=True
+    ),
+    # "you can take a Bonus Action on a later turn to curse a new creature"
+    # (the activity ships as an action; the engine charges what it ships).
+    ("hex", "E3f3Y8ULb3t5mBQu"): ActivityTrigger(kind=ActivityTriggerKind.LATER_USE),
+    # "you deal an extra [[/damage]] damage to the target whenever you hit it
+    # with an attack roll"
+    ("hunters-mark", "dnd5eactivity000"): ActivityTrigger(
+        kind=ActivityTriggerKind.HITS, subject=ActivityTriggerSubject.CASTER, against_bearer=True
+    ),
+    # "you can take a Bonus Action to move the mark to a new creature you can
+    # see within range"
+    ("hunters-mark", "NQtVK0T5uwfMPGQL"): ActivityTrigger(kind=ActivityTriggerKind.LATER_USE),
+    # "On a failed save, a creature takes 10d4 Acid damage and another
+    # [[/damage 5d4 type=acid]] damage at the end of its next turn."
+    ("vitriolic-sphere", "dnd5eactivity200"): ActivityTrigger(
+        kind=ActivityTriggerKind.TURN_END, once=True
+    ),
+    # "A Frightened target makes a Wisdom saving throw at the end of each of
+    # its turns. On a failed save, it takes [[/damage 5d10 type=psychic]]
+    # damage. On a successful save, the spell ends on that target."
+    ("weird", "nuStSySOEkwOUnXf"): ActivityTrigger(
+        kind=ActivityTriggerKind.TURN_END, ends_on_save=True
+    ),
+    # "While Restrained, the target takes 1d6 Piercing damage at the start of
+    # each of its turns."
+    ("ensnaring-strike", "ZWId9mbOE9zFnP6f"): ActivityTrigger(kind=ActivityTriggerKind.TURN_START),
+    # "Until the spell ends, you can take a Magic action to create a new Line of
+    # radiance."
+    ("sunbeam", "Y0cJvZuD7EfwGqkf"): ActivityTrigger(kind=ActivityTriggerKind.LATER_USE),
+    # "Until the spell ends, you can take a Magic action to call down lightning
+    # in that way again"; the 4d10 bolt is the one for when "you're outdoors in
+    # a storm" ("the spell's damage increases by 1d10"), for the caster to pick.
+    ("call-lightning", "dnd5eactivity000"): ActivityTrigger(
+        kind=ActivityTriggerKind.LATER_USE, also_at_cast=True
+    ),
+    ("call-lightning", "dnd5eactivity200"): ActivityTrigger(kind=ActivityTriggerKind.LATER_USE),
+    # "Until the spell ends, you can take a Bonus Action on each of your later
+    # turns to deal this damage again if the object is within range."
+    ("heat-metal", "YPEmwJHX7g68307N"): ActivityTrigger(kind=ActivityTriggerKind.LATER_USE),
+    # "Until the spell ends, you can make the attack again on each of your
+    # turns as a Magic action, targeting the same creature or a different one."
+    ("vampiric-touch", "dnd5eactivity000"): ActivityTrigger(
+        kind=ActivityTriggerKind.LATER_USE, also_at_cast=True
+    ),
+    # "When you cast the spell and as a Magic action on your later turns before
+    # the spell ends, you can exert your will on one creature or object"
+    ("telekinesis", "ntGShpXYlBqLMZmK"): ActivityTrigger(
+        kind=ActivityTriggerKind.LATER_USE, also_at_cast=True
+    ),
+}
+
+
+def _apply_activity_triggers(slug: str, activities: list[Activity]) -> list[Activity]:
+    """Set each activity's ``trigger`` from ``_ACTIVITY_TRIGGERS``. Copy-on-write
+    like ``_apply_spell_damage_type_corrections``."""
+    out: list[Activity] = []
+    for act in activities:
+        trigger = _ACTIVITY_TRIGGERS.get((slug, act.id))
+        if trigger is not None:
+            act = act.model_copy(update={"trigger": trigger})
+        out.append(act)
+    return out
+
+
 #: Spell slug → the SRD 5.2 sentence that removes cover from the save. Foundry
 #: has no field for this; the sentence is the only source. Re-verify with
 #: ``grep -rl "benefit from" packs/_source/spells24`` when refreshing upstream.
@@ -2320,10 +2414,13 @@ def translate_spell_yaml(
         duration=_spell_duration(system.get("duration") or {}),
         materials=_spell_materials(system.get("materials") or {}),
         preparation=_spell_preparation(system.get("preparation") or {}),
-        activities=_apply_affects_corrections(
+        activities=_apply_activity_triggers(
             slug,
-            _apply_spell_save_cover_overrides(
-                slug, _apply_spell_damage_type_corrections(slug, _translate_activities(system))
+            _apply_affects_corrections(
+                slug,
+                _apply_spell_save_cover_overrides(
+                    slug, _apply_spell_damage_type_corrections(slug, _translate_activities(system))
+                ),
             ),
         ),
         passive_effects=_passive_effects(doc),

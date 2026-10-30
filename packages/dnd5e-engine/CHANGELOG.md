@@ -7,14 +7,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+Activities that fire later. An activity the corpus marks with
+`Activity.trigger` (`dnd5e-srd-data`, unreleased) no longer resolves with the
+cast: the engine holds the use and fires the activity at its moment — the
+start or end of a turn of a creature bearing an effect of the cast, a hit the
+caster lands, a hit on the bearer, damage it takes, or a later action the
+caster takes. Requires the matching `dnd5e-srd-data`.
+
 ### Added
 
 - **`PlayerIntent.activity_id` on a `cast_spell`** — names the one spell
-  activity the cast resolves (Sunbeam's Initial Cast without its Create New
-  Sunbeam, Acid Arrow's attack without its lingering damage), as it already
-  does on a `use_feature`. Omitted, every activity resolves as before.
+  activity the cast resolves (Sunbeam's Initial Cast), as it already does on a
+  `use_feature`; also how a caster repeats a `later_use` activity of a running
+  spell (Sunbeam's new line, Call Lightning's next bolt, Heat Metal's reheat),
+  for the activity's own action cost and no slot. Omitted, every activity that
+  fires with the cast resolves.
 - **`CastFailedReason` `"activity_invalid"`** — a cast whose `activity_id`
-  names none of the spell's activities, refused before the slot is spent.
+  names none of the spell's activities the caster can use now: none at all,
+  one held for a later moment, or a later use of a spell with no live use.
+  Refused before the slot is spent.
+- **`ActivityTriggered`** (`dnd5e_engine.events`) — a held activity fires:
+  the source, the activity, the moment (`trigger`), the subject and the
+  target. Emitted before the activity's own events.
+- **`AttackRolled.attack_type`** — `"melee"`, `"ranged"` or `""`, from the
+  activity's `attack.type.value`.
+- **`dnd5e_engine.triggers`** — `HeldUse`, the record of a use whose
+  activities fire later, and the pure questions asked of it.
+- **Turn hooks `engine:activity-triggers-turn-end`** (first of the `turn_end`
+  hooks) **and `engine:activity-triggers-turn-start`** (last of the
+  `turn_start` hooks).
+
+### Changed
+
+- **A cast no longer resolves an activity the corpus holds for later.** Acid
+  Arrow deals its 2d4 at the end of the target's next turn, not at the cast;
+  Searing Smite burns and saves at the start of each of the target's turns;
+  Weird's frightened creatures save at the end of their turns, the spell
+  ending on a success; Hex and Hunter's Mark add their damage on each hit
+  against the marked creature; Sunbeam's, Call Lightning's, Heat Metal's,
+  Vampiric Touch's and Telekinesis's repeats wait for the caster's later
+  action. A host that read the later damage from the cast's events reads it
+  from the later turn's instead.
 
 ## [0.7.0]
 

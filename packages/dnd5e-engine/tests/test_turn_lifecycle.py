@@ -282,7 +282,12 @@ def test_hooks_registered_by_the_engine_are_present_and_ordered():
     timed-effect expiry and the F3a-follow-up repeat save. Registration order is
     part of the seeded-replay contract, so it is pinned here:
 
-    * ``engine:repeat-save`` must stay FIRST — the SRD end-of-turn repeat save
+    * ``engine:activity-triggers-turn-end`` comes FIRST of all — an activity a
+      spell holds for "the end of its next turn" (Acid Arrow's lingering acid)
+      fires while the effect holding it is still live, before the timed expiry
+      ends a ``turns: 1`` effect on that same boundary; its ``turn_start`` twin
+      follows the reaction-effect expiry;
+    * ``engine:repeat-save`` must stay next — the SRD end-of-turn repeat save
       (Hold Person & co.) has to resolve while its source effect is still live,
       i.e. before ``engine:duration-tick`` could expire that effect on the same
       boundary;
@@ -309,8 +314,9 @@ def test_hooks_registered_by_the_engine_are_present_and_ordered():
 
     assert asyncio.run(_run()) == {
         "round_start": [],
-        "turn_start": ["engine:reaction-effect-expiry"],
+        "turn_start": ["engine:reaction-effect-expiry", "engine:activity-triggers-turn-start"],
         "turn_end": [
+            "engine:activity-triggers-turn-end",
             "engine:repeat-save",
             "engine:duration-tick",
             "engine:timed-effect-expiry",

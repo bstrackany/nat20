@@ -97,6 +97,15 @@
           "width": ""
         }
       },
+      "trigger": {
+        "against_bearer": false,
+        "also_at_cast": true,
+        "attack": "",
+        "ends_on_save": false,
+        "kind": "later_use",
+        "once": false,
+        "subject": "target"
+      },
       "uses": {
         "max": "",
         "recovery": [],

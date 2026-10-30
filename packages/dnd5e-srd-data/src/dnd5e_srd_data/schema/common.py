@@ -31,7 +31,9 @@ from pydantic import (
     Field,
     NonNegativeInt,
     PositiveInt,
+    SerializerFunctionWrapHandler,
     field_serializer,
+    model_serializer,
 )
 
 # ---------------------------------------------------------------------------
@@ -167,6 +169,57 @@ class ReactionTriggerKind(StrEnum):
     TAKES_DAMAGE = "takes_damage"
     # Hellish Rebuke — "taking damage from a creature that you can see"
     CREATURE_FALLS = "creature_falls"  # Feather Fall — "you or a creature you can see … falls"
+
+
+class ActivityTriggerKind(StrEnum):
+    """When an activity fires, when not with the use of the thing that carries
+    it. SRD 5.2 writes these into the text of a spell or feature: "at the end
+    of each of its turns", "the next time you hit a creature", "you can take a
+    Magic action to call down lightning in that way again"."""
+
+    TURN_START = "turn_start"  # Searing Smite — "At the start of each of its turns"
+    TURN_END = "turn_end"  # Acid Arrow — "At the end of its next turn"
+    HITS = "hits"  # Hex — "whenever you hit the target with an attack roll"
+    HIT_BY_ATTACK = "hit_by_attack"  # Armor of Agathys — "a creature hits you with a melee attack"
+    TAKES_DAMAGE = "takes_damage"  # "whenever the target takes damage"
+    LATER_USE = "later_use"  # Sunbeam — "you can take a Magic action to create a new line"
+
+
+class ActivityTriggerSubject(StrEnum):
+    """Whose event a trigger watches."""
+
+    CASTER = "caster"  # the creature that used the spell, feature or item
+    TARGET = "target"  # each creature bearing an effect of that use
+
+
+class ActivityTrigger(BaseModel, frozen=True):
+    """When an activity fires, instead of with its parent's use.
+
+    An activity without a trigger resolves when its spell is cast, its feature
+    used or its item used; one with a trigger waits for the moment its ``kind``
+    names. The use is tracked while any effect it applied remains on a creature
+    (or, applying none, for the spell's own duration), and the trigger ends with
+    it. The fired activity resolves against the creature the moment names: the
+    subject itself at a turn boundary, the creature hit on ``hits``, the attacker
+    on ``hit_by_attack`` and ``takes_damage``, and a later use's own targets.
+
+    ``attack`` narrows ``hits`` / ``hit_by_attack`` to melee or ranged attack
+    rolls. ``against_bearer`` narrows ``hits`` to a hit on a creature bearing an
+    effect of the use (Hex's cursed target). ``once`` fires the activity at most
+    once, then ends the use's effects (Acid Arrow's lingering acid). A save
+    activity with ``ends_on_save`` ends the use's effects on a creature that
+    succeeds (Searing Smite). ``also_at_cast`` makes a ``later_use`` activity
+    fire with the cast as well (Call Lightning's bolt, which the caster then
+    repeats).
+    """
+
+    kind: ActivityTriggerKind
+    subject: ActivityTriggerSubject = ActivityTriggerSubject.TARGET
+    attack: Literal["", "melee", "ranged"] = ""
+    against_bearer: bool = False
+    once: bool = False
+    ends_on_save: bool = False
+    also_at_cast: bool = False
 
 
 class ReactionCondition(BaseModel, frozen=True):
@@ -631,8 +684,20 @@ class _ActivityBase(BaseModel):
     target: TargetBlock = Field(default_factory=TargetBlock)
     uses: UsesBlock = Field(default_factory=UsesBlock)
     visibility: VisibilityBlock = Field(default_factory=VisibilityBlock)
+    #: When the activity fires, when not with its parent's use. ``None`` (the
+    #: Foundry default — Foundry has no field for it) is "with the use"; the
+    #: translator's per-entry table and a consumer's own data set it. Left out
+    #: of a dump when ``None`` so the corpus files only change where it is set.
+    trigger: ActivityTrigger | None = None
 
     model_config = {"populate_by_name": True}
+
+    @model_serializer(mode="wrap")
+    def _without_absent_trigger(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        data: dict[str, Any] = handler(self)
+        if data.get("trigger") is None:
+            data.pop("trigger", None)
+        return data
 
 
 class _ActivityBaseWithEffects(_ActivityBase):

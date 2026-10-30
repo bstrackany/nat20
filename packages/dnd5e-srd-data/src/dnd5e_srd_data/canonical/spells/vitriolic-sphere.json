@@ -203,6 +203,15 @@
           "width": ""
         }
       },
+      "trigger": {
+        "against_bearer": false,
+        "also_at_cast": false,
+        "attack": "",
+        "ends_on_save": false,
+        "kind": "turn_end",
+        "once": true,
+        "subject": "target"
+      },
       "uses": {
         "max": "",
         "recovery": [],

@@ -65,7 +65,7 @@ import logging
 import re
 from collections import defaultdict
 from dataclasses import replace
-from typing import TYPE_CHECKING, Final
+from typing import TYPE_CHECKING, Final, Literal
 
 from dnd5e_srd_data.schema.item import WeaponProperty
 from dnd5e_srd_data.schema.monster import MonsterTraitMechanic
@@ -243,6 +243,7 @@ def resolve_attack(
                 is_crit=is_crit,
                 is_hit=is_hit,
                 is_opportunity_attack=ctx.is_opportunity_attack,
+                attack_type=_attack_type_of(activity),
                 natural=roll.kept,
                 modifier=attack_bonus,
                 sources=list(roll.sources),
@@ -387,6 +388,7 @@ def _resolve_cleave_chain(
             is_crit=is_crit,
             is_hit=is_hit,
             is_opportunity_attack=ctx.is_opportunity_attack,
+            attack_type=_attack_type_of(activity),
             natural=roll.kept,
             modifier=attack_bonus,
             sources=list(roll.sources),
@@ -407,6 +409,15 @@ def _resolve_cleave_chain(
         is_crit=is_crit,
         source_id_override="mastery:cleave",
     )
+
+
+def _attack_type_of(activity: AttackActivity) -> Literal["melee", "ranged", ""]:
+    """The roll's kind for ``AttackRolled.attack_type``: the activity's own
+    ``attack.type.value`` when it is one of the two SRD kinds."""
+    value = activity.attack.type.value
+    if value == "melee":
+        return "melee"
+    return "ranged" if value == "ranged" else ""
 
 
 def _attack_roll_sources(

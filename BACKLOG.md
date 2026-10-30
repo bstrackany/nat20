@@ -1257,17 +1257,19 @@ zone + apply logic:
   `advance_monster_turn` has no branch that chooses any of the five C14
   actions; a monster only ever attacks, casts, moves, or flees.
   (`packages/dnd5e-engine/src/dnd5e_engine/orchestrator.py::advance_monster_turn`)
-- **No ongoing-damage producer.** (2026-08-26, narrowed 2026-09-03 C18) F3a
-  gave it a place to land — `turn_lifecycle.py` runs `round_start` /
-  `turn_start` / `turn_end` hooks off the single `_end_turn_and_advance` path —
-  but the only registered hooks are the pre-existing duration tick and
-  reaction-effect expiry, plus F3b's timed-effect expiry. Start-of-turn damage
-  (Acid Arrow, Spirit Guardians) still has no producer. (Regeneration and
-  recharge rolls closed C18 — they run at the head of a driven monster turn,
+- **Ongoing damage from an area has no producer (2026-08-26, narrowed
+  2026-09-03 C18, narrowed 2026-10-30).** An activity a spell holds for a
+  turn boundary now fires there when an effect of the cast anchors it
+  (`Activity.trigger`: Acid Arrow's lingering acid, Searing Smite's burn,
+  Weird's repeat save). Damage that depends on where a creature stands —
+  Spirit Guardians' emanation, Moonbeam, Cloud of Daggers, Stinking Cloud's
+  "Start of Turn Save" — still has none: it needs a persistent area the turn
+  hook can test a creature's cell against. (Regeneration and recharge rolls
+  closed C18 — they run at the head of a driven monster turn,
   `_run_monster_turn_start`, rather than as a registered `turn_start` hook;
   see `docs/migration/v0.5-to-v0.6.md`.)
   (`packages/dnd5e-engine/src/dnd5e_engine/turn_lifecycle.py`,
-  `packages/dnd5e-engine/src/dnd5e_engine/orchestrator.py::_register_default_turn_hooks`)
+  `packages/dnd5e-engine/src/dnd5e_engine/orchestrator.py::_fire_turn_triggers`)
 - **Initiative has no "Delay" option.** C14 (2026-09-01) added the
   engine-rolled `d20 + DEX modifier` path (`initiative=None`) with Surprise
   and Incapacitated Disadvantage; the SRD "Delay" combat option (holding
@@ -1287,19 +1289,23 @@ zone + apply logic:
 
 ## Audit 2026-08-26 — spellcasting & concentration
 
-- **A spell's turn-boundary activities resolve at cast time (2026-10-04,
-  C26a).** Every activity a spell carries resolves when it is cast, including
-  the ones Foundry fires on a later turn: Weird's "End of Turn Save" makes
-  every creature in the sphere save twice at once, taking the damage twice.
-  Vitriolic Sphere's "End of Turn Damage", Incendiary Cloud's "Per Turn Save",
-  Storm of Vengeance's turn-2-to-5 activities, Earthquake's "End of Turn
-  Fissures", Delayed Blast Fireball's bead activities and the start-of-turn
-  activities of Ensnaring Strike, Searing Smite, Stinking Cloud and Tsunami
-  have the same shape. A host can name the cast-time activity with
-  `PlayerIntent.activity_id`, but nothing fires the rest later. Needs a
-  per-activity timing signal and a turn-boundary producer (see "No
-  ongoing-damage producer").
-  (`packages/dnd5e-engine/src/dnd5e_engine/orchestrator.py::submit_player_intent`)
+- **Area and turn-count activities still resolve at cast time (2026-10-04,
+  C26a; narrowed 2026-10-30).** `Activity.trigger` now holds an activity for
+  the end or start of a bearer's turn, a hit, or a later use (Acid Arrow,
+  Searing Smite, Hex, Hunter's Mark, Vitriolic Sphere, Weird, Ensnaring
+  Strike, Sunbeam, Call Lightning, Heat Metal, Vampiric Touch, Telekinesis —
+  `_ACTIVITY_TRIGGERS` in the translator). The moments the vocabulary can't
+  yet name still fire with the cast: a creature in an area at its turn
+  (Incendiary Cloud's "Per Turn Save", Stinking Cloud's "Start of Turn Save",
+  Tsunami's "Start of Turn Effects", Spirit Guardians' and Conjure Woodland
+  Beings' emanation saves), a numbered later round (Storm of Vengeance's
+  turns 2–5), the caster's own turn end once (Earthquake's "End of Turn
+  Fissures") and a bead touched or detonated (Delayed Blast Fireball). Each
+  needs a persistent area or a round counter on the held use. Hex's "Curse
+  New Creature" ships as an action where the text says Bonus Action, so the
+  later use costs an Action.
+  (`packages/dnd5e-engine/src/dnd5e_engine/orchestrator.py::_fire_turn_triggers`,
+  `packages/dnd5e-srd-data/tools/translators/foundry.py::_ACTIVITY_TRIGGERS`)
 - **An item's hazard area saves at use time, not when a creature enters it
   (2026-10-04, C26a).** SRD 5.2 Ball Bearings and Caltrops: "A creature that
   enters this area for the first time on a turn must succeed on a DC …

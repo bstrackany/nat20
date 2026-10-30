@@ -3,8 +3,13 @@
 from __future__ import annotations
 
 from dnd5e_engine import PlayerIntent
-from dnd5e_engine.events import DamageApplied
-from dnd5e_engine.orchestrator import _get_live, start_combat, submit_player_intent
+from dnd5e_engine.events import ActivityTriggered, DamageApplied, SpellCast
+from dnd5e_engine.orchestrator import (
+    _get_live,
+    advance_monster_turn,
+    start_combat,
+    submit_player_intent,
+)
 from dnd5e_engine.specs import EncounterMemberSpec, PartyMemberSpec
 from tests.e2e.harness import cell, events_of, grid_scene, run_async
 
@@ -19,6 +24,11 @@ def test_c01_s01_call_lightning_repeat_bolt_applies_lightning_damage(caplog):
     (activity `dnd5eactivity200`, `type: damage`, `damage.parts[0].types: []`);
     canonical packages/dnd5e-srd-data/src/dnd5e_srd_data/canonical/spells/call-lightning.json
     (same activity, same empty `types`).
+
+    The cast calls down the first bolt; the storm's bolt (``dnd5eactivity200``,
+    "If you're outdoors in a storm ... the spell's damage increases by 1d10")
+    is a later use, repeated on the druid's next turn by a ``cast_spell`` naming
+    it — no second slot.
     """
 
     async def _run():
@@ -62,6 +72,17 @@ def test_c01_s01_call_lightning_repeat_bolt_applies_lightning_damage(caplog):
                 intent_type="cast_spell", spell_id="call-lightning", target_id="mon:foe"
             ),
         )
+        await advance_monster_turn(start.handle)
+        await submit_player_intent(
+            start.handle,
+            actor_id="char:druid",
+            intent=PlayerIntent(
+                intent_type="cast_spell",
+                spell_id="call-lightning",
+                target_id="mon:foe",
+                activity_id="dnd5eactivity200",
+            ),
+        )
         return live
 
     live = run_async(_run())
@@ -72,10 +93,13 @@ def test_c01_s01_call_lightning_repeat_bolt_applies_lightning_damage(caplog):
         if e.target_id == "mon:foe" and e.damage_type == "lightning"
     ]
     assert len(lightning_hits) == 2
-    amounts = sorted(e.amount for e in lightning_hits)
-    initial_bolt, repeat_bolt = amounts
+    initial_bolt, repeat_bolt = (e.amount for e in lightning_hits)
     assert 3 <= initial_bolt <= 30
     assert 4 <= repeat_bolt <= 40
+    assert len(events_of(live, SpellCast)) == 1
+    assert live.spell_slots_by_entity["char:druid"] == {3: 0}
+    [repeat] = events_of(live, ActivityTriggered)
+    assert (repeat.trigger, repeat.activity_id) == ("later_use", "dnd5eactivity200")
 
 
 def test_c01_s02_freezing_sphere_damage_parts_apply_cold_damage(caplog):

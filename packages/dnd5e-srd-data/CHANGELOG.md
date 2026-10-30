@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`Activity.trigger`** (`ActivityTrigger`, `ActivityTriggerKind`,
+  `ActivityTriggerSubject`) — when an activity fires, when not with its
+  parent's use: `turn_start`, `turn_end`, `hits`, `hit_by_attack`,
+  `takes_damage` or `later_use`, with `subject`, `attack`, `against_bearer`,
+  `once`, `ends_on_save` and `also_at_cast`. Foundry has no field for it; the
+  translator sets it from `_ACTIVITY_TRIGGERS`, a per-activity table that
+  quotes the SRD 5.2 sentence naming the moment. Absent (`None`) means "with
+  the use" and is left out of a dump, so unmarked entries are unchanged on
+  disk.
+
+### Changed
+
+- **Fourteen activities on twelve spells carry a trigger**: Acid Arrow's and
+  Vitriolic Sphere's lingering acid (`turn_end`, `once`), Searing Smite's and
+  Ensnaring Strike's start-of-turn damage (`turn_start`; Searing Smite's save
+  `ends_on_save`), Weird's end-of-turn save (`ends_on_save`), Hex's and
+  Hunter's Mark's extra damage (`hits`, `against_bearer`) and the repeatable
+  actions of Sunbeam, Hex, Hunter's Mark, Heat Metal, Call Lightning (both
+  bolts; the first `also_at_cast`), Vampiric Touch and Telekinesis
+  (`later_use`, the last two `also_at_cast`).
+
 ## [0.7.0]
 
 Lockstep release with `dnd5e-engine` 0.7.0 and `nat20-bridge` 0.7.0.
