@@ -208,3 +208,55 @@ def test_a_feats_effects_reach_the_derived_sheet():
     )
     assert "ember-heart" in sheet.feats
     assert "charmed" in sheet.condition_immunities
+
+
+def test_a_seeded_changes_tokens_are_resolved_for_the_character():
+    """SRD 5.2 Aura of Protection ships its save bonus as ``@abilities.cha.mod``;
+    the save roller parses numbers and dice, so the token is resolved when the
+    effect is seeded (Charisma 16: +3) and a paladin's save rolls."""
+    set_lib_loader_for_tests(BUNDLED)
+
+    async def _go():
+        start = await start_combat(
+            session_id="aura",
+            party=[
+                PartyMemberSpec(
+                    entity_id="char:pal",
+                    name="paladin",
+                    initiative=20,
+                    hp_current=60,
+                    hp_max=60,
+                    charisma=16,
+                    class_slug="paladin",
+                    character_level=7,
+                    zone_id=cell(0, 0),
+                )
+            ],
+            encounter=[
+                EncounterMemberSpec(
+                    entity_id="mon:dummy",
+                    entity_type="Monster",
+                    name="dummy",
+                    initiative=1,
+                    hp_current=50,
+                    hp_max=50,
+                    ac=10,
+                    zone_id=cell(1, 0),
+                )
+            ],
+            grid_scene=GridScene(width=10, height=10, cell_size_ft=5),
+            rng_seed=2,
+        )
+        live = _get_live(start.handle)
+        paladin = _find_combatant(live, "char:pal")
+        return live, _build_hydration_payload(live, caster=paladin)
+
+    live, payload = asyncio.run(_go())
+    [aura] = [e for e in live.active_effects["char:pal"] if e.name == "Protected"]
+    assert [(c.key, c.value) for c in aura.changes] == [("system.bonuses.abilities.save", "3")]
+    assert payload["save_modifiers"]["char:pal"]["passive_save_bonus"] == "3"
+    from random import Random
+
+    from dnd5e_engine.activities.dice import roll_expr
+
+    assert roll_expr(payload["save_modifiers"]["char:pal"]["passive_save_bonus"], Random(1)) == 3

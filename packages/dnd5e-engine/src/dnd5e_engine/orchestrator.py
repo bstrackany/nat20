@@ -7929,15 +7929,18 @@ def _seed_always_on(live: _LiveCombat, pc: Combatant) -> None:
     every activity they carry a trigger for as a permanent use (a "when you
     hit" rider, a start-of-turn heal). No event is emitted: nothing happened,
     the character arrived that way."""
+    roll_data = _uses_roll_data(pc, _scale_values_of(pc))
     for kind, source in _always_on_sources(pc):
         for passive in source.passive_effects:
             if not passive.transfer or passive.disabled:
                 continue
             changes = [
-                _passive_change_to_active_change(ch)
+                change
                 for ch in passive.changes
                 if ch.key.startswith(_LIVE_ALWAYS_ON_KEY_PREFIXES)
                 or ch.key.endswith(_LIVE_ALWAYS_ON_KEY_SUFFIXES)
+                if (change := _passive_change_to_active_change(ch, roll_data, source.slug))
+                is not None
             ]
             if not changes:
                 continue
@@ -7969,13 +7972,31 @@ def _seed_always_on(live: _LiveCombat, pc: Combatant) -> None:
             )
 
 
-def _passive_change_to_active_change(change: Any) -> ActiveEffectChange:
-    """A corpus ``PassiveEffectChange`` (Foundry's int mode) as the runtime change."""
+def _passive_change_to_active_change(
+    change: Any, roll_data: UsesRollData, source_slug: str
+) -> ActiveEffectChange | None:
+    """A corpus ``PassiveEffectChange`` (Foundry's int mode) as the runtime
+    change, its roll-data tokens resolved for this character now (Aura of
+    Protection's ``@abilities.cha.mod`` becomes ``"3"``): the folds that read a
+    seeded change parse numbers and dice, not tokens. A value the character
+    can't resolve is left out, with a warning."""
     mode = {0: "custom", 1: "multiply", 2: "add", 3: "downgrade", 4: "upgrade", 5: "override"}
+    value: Any = change.value
+    if isinstance(value, str) and "@" in value:
+        resolved = evaluate_uses_formula(value, roll_data)
+        if resolved is None:
+            _LOGGER.warning(
+                "always_on_change_unresolved slug=%s key=%s value=%s",
+                source_slug,
+                change.key,
+                value,
+            )
+            return None
+        value = str(resolved)
     return ActiveEffectChange(
         key=change.key,
         mode=mode.get(int(change.mode), "custom"),
-        value=change.value,
+        value=value,
         priority=change.priority if change.priority is not None else 20,
     )
 
