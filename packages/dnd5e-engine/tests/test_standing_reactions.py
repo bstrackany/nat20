@@ -289,3 +289,143 @@ def test_disarm_stands_the_reaction_down():
     assert live.pending_reactions == []
     assert not _events(live, ReactionTriggered)
     assert live.spell_slots_by_entity["char:pc"] == {1: 1}
+
+
+def _hit_by_attack_feat(slug: str) -> Feat:
+    """A second feat reaction on the SAME trigger as Shield ("hit by an attack")."""
+    return Feat(
+        slug=slug,
+        name=slug.replace("-", " ").title(),
+        description="Test feat.",
+        category=FeatCategory.GENERAL,
+        activities=[
+            HealActivity(
+                _id=f"{slug[:8]}heal",
+                name="Brace",
+                activation=ActivationBlock(
+                    type="reaction",
+                    condition="When an attack hits you",
+                    reaction_conditions=[ReactionCondition(kind=ReactionTriggerKind.HIT_BY_ATTACK)],
+                ),
+                healing=DamagePartBlock(number=1, denomination=4, types=["healing"]),
+                uses={"max": "9", "spent": 0, "recovery": []},  # type: ignore[arg-type]
+            )
+        ],
+        provenance=Provenance(
+            source="homebrew",
+            source_url=f"test://{slug}",
+            ingest_date=date(2026, 1, 1),
+            ingest_version="test",
+            license_tag="unspecified",
+        ),
+        review=ReviewState(),
+    )
+
+
+class _WithFeats(_WithFeat):
+    def __init__(self, *feats: Feat):
+        self._feats = {f.slug: f for f in feats}
+
+    def get_feat(self, slug: str):
+        return self._feats.get(slug) or BUNDLED.get_feat(slug)
+
+
+def test_a_reaction_can_be_armed_before_the_owners_first_turn():
+    """Arming is free and bound to no turn: the wizard who lost initiative
+    arms Shield while the goblin is up, and it answers the goblin's very
+    first hit of the fight."""
+
+    async def _go():
+        handle, live = await _start(
+            _pc(
+                class_slug="wizard",
+                intelligence=16,
+                initiative=1,  # the goblin (initiative 1 too, listed first) acts first
+                spells_known=["shield"],
+                spell_slots={1: 1},
+            )
+        )
+        goblin_first = live.current_actor_id == "mon:foe"
+        await submit_player_intent(
+            handle, actor_id="char:pc", intent=PlayerIntent(intent_type="arm", spell_id="shield")
+        )
+        assert live.current_actor_id == ("mon:foe" if goblin_first else "char:pc")  # no hand-off
+        if goblin_first:
+            await advance_monster_turn(handle)
+        else:
+            await submit_player_intent(
+                handle, actor_id="char:pc", intent=PlayerIntent(intent_type="pass")
+            )
+            await advance_monster_turn(handle)
+        return live, goblin_first
+
+    live, goblin_first = asyncio.run(_go())
+    assert goblin_first, "the seed must give the goblin the first turn"
+    assert [r.reaction_name for r in _events(live, ReactionTriggered)] == ["shield"]
+    assert live.spell_slots_by_entity["char:pc"] == {1: 0}
+
+
+def test_arming_order_is_firing_priority_and_survives_a_fired_reaction():
+    """Two armed reactions answer "hit by an attack". The first armed fires; the
+    other stays queued. After the owner's turn start re-queues the fired one,
+    the next hit still goes to the first armed, not to whichever was left over."""
+    set_lib_loader_for_tests(
+        _WithFeats(_hit_by_attack_feat("iron-brace"), _hit_by_attack_feat("oak-brace"))
+    )
+
+    async def _go():
+        handle, live = await _start(_pc(feats=("iron-brace", "oak-brace")))
+        for slug in ("oak-brace", "iron-brace"):  # oak first: oak has priority
+            await submit_player_intent(
+                handle, actor_id="char:pc", intent=PlayerIntent(intent_type="arm", feature_id=slug)
+            )
+        for _ in range(3):
+            await submit_player_intent(
+                handle, actor_id="char:pc", intent=PlayerIntent(intent_type="pass")
+            )
+            await advance_monster_turn(handle)
+        return live
+
+    live = asyncio.run(_go())
+    hits = [a for a in _events(live, AttackRolled) if a.attacker_id == "mon:foe" and a.is_hit]
+    fired = [r.reaction_name for r in _events(live, ReactionTriggered)]
+    assert len(hits) >= 2, "the seed must give the goblin hits"
+    assert fired, "a hit must draw a reaction"
+    assert set(fired) == {"oak-brace"}, fired
+
+
+def test_armed_reactions_on_the_spec_stand_from_the_first_moment_in_priority_order():
+    """``PartyMemberSpec.armed_reactions`` seeds the standing reactions at
+    start_combat: the wizard who lost initiative has Shield against the
+    goblin's first hit without ever having had a turn, and the order listed is
+    the firing priority (the feat named first answers the hit, Shield waits)."""
+    set_lib_loader_for_tests(_WithFeats(_hit_by_attack_feat("iron-brace")))
+
+    async def _go():
+        handle, live = await _start(
+            _pc(
+                class_slug="wizard",
+                intelligence=16,
+                initiative=1,
+                spells_known=["shield"],
+                spell_slots={1: 1},
+                feats=("iron-brace",),
+                armed_reactions=(
+                    "iron-brace",
+                    "shield",
+                    "fire-bolt",
+                ),  # fire-bolt: skipped, no trigger
+            )
+        )
+        assert live.current_actor_id == "mon:foe"
+        await advance_monster_turn(handle)
+        return live
+
+    live = asyncio.run(_go())
+    assert [pr.feature_id or pr.spell_id for pr in live.standing_reactions] == [
+        "iron-brace",
+        "shield",
+        "shield",  # Shield's second typed trigger (Magic Missile)
+    ]
+    assert [r.reaction_name for r in _events(live, ReactionTriggered)] == ["iron-brace"]
+    assert live.spell_slots_by_entity["char:pc"] == {1: 1}

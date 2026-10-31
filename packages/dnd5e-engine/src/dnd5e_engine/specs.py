@@ -173,6 +173,15 @@ class PartyMemberSpec(BaseModel):
     # reaches combat through ``spell_abilities`` and ``slotless_casts``. Other
     # feats are recorded, not applied.
     feats: tuple[str, ...] = ()
+    # SRD §Reactions — the reactions this PC keeps armed from the first moment
+    # of the fight: spell slugs from ``spells_known``, feature slugs its class,
+    # subclass or species grants, feat slugs from ``feats``. Each fires by
+    # itself when its typed trigger occurs and the Reaction is available, as an
+    # ``"arm"`` intent would arrange on the PC's turn — but seeded here the
+    # wizard who lost initiative still has Shield in round 1. ORDER IS
+    # PRIORITY: when two armed reactions answer one trigger the first listed
+    # fires. A slug naming nothing with a reaction trigger is skipped.
+    armed_reactions: tuple[str, ...] = ()
     # One Fighting Style feat for a hand-built spec; merged with any in ``feats``.
     fighting_style: FightingStyle | None = None
     # The reach this PC's opportunity attack threatens when it makes an Unarmed

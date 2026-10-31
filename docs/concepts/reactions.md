@@ -58,7 +58,16 @@ feature or a feat arms the same way with `feature_id` (and `activity_id` where
 it has several); its use is spent when it fires. A reaction that answers a
 creature resolves against the one whose act triggered it (Hellish Rebuke's
 fire hits the attacker); a Self-range spell lands on the reactor. `"disarm"`
-stands one (or all) down. Arming keeps the turn.
+stands one (or all) down. Arming keeps the turn, and neither `"arm"` nor
+`"disarm"` waits for it: any living combatant in initiative may submit them at
+any point of the fight, before their first turn included.
+
+A host that knows what a PC keeps armed lists it on the spec instead:
+`PartyMemberSpec.armed_reactions=("uncanny-dodge", "shield")` seeds the same
+standing reactions at `start_combat`, so a wizard who lost initiative still has
+Shield in round 1. The order is the priority: when two armed reactions answer
+one trigger, the first listed (or first armed) fires and the other waits for
+the next occurrence; that order survives the turn-start re-arming.
 
 ## Recognized triggers
 

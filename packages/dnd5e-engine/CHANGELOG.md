@@ -16,6 +16,16 @@ caster takes. Requires the matching `dnd5e-srd-data`.
 
 ### Added
 
+- **`PartyMemberSpec.armed_reactions`** — the reactions a PC keeps armed from
+  the first moment of the fight (spell, feature or feat slugs), seeded by
+  `start_combat` as an `"arm"` intent would arrange them on the PC's turn, so
+  a wizard who lost initiative still has Shield in round 1. Order is priority:
+  when two armed reactions answer one trigger the first listed fires, and the
+  turn-start re-arming keeps that order even after one of them has fired.
+- **`"arm"` / `"disarm"` out of turn** — both are free and take no action, so
+  `submit_player_intent` accepts them from any living combatant in initiative
+  at any point of the fight (before their first turn included), keeping the
+  turn where it is.
 - **`PlayerIntent.activity_id` on a `cast_spell`** — names the one spell
   activity the cast resolves (Sunbeam's Initial Cast), as it already does on a
   `use_feature`; also how a caster repeats a `later_use` activity of a running

@@ -8308,6 +8308,8 @@ async def start_combat(
     for pc in live.initiative:
         if pc.entity_type == "Character":
             _seed_always_on(live, pc)
+    for spec in party:
+        _seed_armed_reactions(live, spec)
 
     # C12 — a Character HYDRATED into combat already at 0 HP is Unconscious
     # (SRD 5.2 "Dropping to 0 Hit Points"). The runtime fold hangs off the
@@ -9474,6 +9476,13 @@ def _validate_intent_preconditions(
 
     current = _current_actor(live)
     if current.entity_id != actor_id:
+        # SRD §Reactions — ``arm`` / ``disarm`` cost nothing and take no
+        # action, so they are not bound to the owner's turn: a host offers them
+        # before the first turn (a wizard with low initiative still has Shield
+        # in round 1) and whenever a player changes their mind. The owner, not
+        # the current actor, is what their handlers act on.
+        if intent is not None and intent.intent_type in _OUT_OF_TURN_INTENTS:
+            return next(c for c in live.initiative if c.entity_id == actor_id)
         raise IntentRejectedError(
             "not_actor_turn",
             f"current_turn={current.entity_id!r}, submitted={actor_id!r}",
@@ -9491,6 +9500,11 @@ def _validate_intent_preconditions(
             f"actor_id={actor_id!r} is Incapacitated and cannot take {intent.intent_type!r}",
         )
     return current
+
+
+#: Intents accepted from a combatant whose turn it is not (see
+#: ``_validate_intent_preconditions``): turn-keeping, costless, state-only.
+_OUT_OF_TURN_INTENTS: frozenset[str] = frozenset({"arm", "disarm"})
 
 
 def _handle_move(live: _LiveCombat, current: Combatant, intent: PlayerIntent) -> None:
@@ -12544,20 +12558,80 @@ def _handle_arm(live: _LiveCombat, current: Combatant, intent: PlayerIntent) -> 
             ),
         )
         return
+    _arm_standing(
+        live,
+        current.entity_id,
+        triggers,
+        spell_id=intent.spell_id,
+        feature_id=intent.feature_id,
+        slot_level=intent.slot_level,
+        activity_id=intent.activity_id,
+    )
+
+
+def _arm_standing(
+    live: _LiveCombat,
+    owner_id: str,
+    triggers: Sequence[ReactionTrigger],
+    *,
+    spell_id: str | None,
+    feature_id: str | None,
+    slot_level: int | None = None,
+    activity_id: str | None = None,
+) -> None:
+    """Keep one spell / feature / feat armed for the whole combat, one standing
+    entry per trigger, appended behind whatever the owner armed before (the
+    first armed fires when two answer one trigger)."""
     for trigger in triggers:
         armed = _PendingReaction(
-            owner_id=current.entity_id,
+            owner_id=owner_id,
             trigger=trigger,
-            spell_id=intent.spell_id,
-            slot_level=intent.slot_level,
-            feature_id=intent.feature_id,
-            activity_id=intent.activity_id,
+            spell_id=spell_id,
+            slot_level=slot_level,
+            feature_id=feature_id,
+            activity_id=activity_id,
             standing=True,
         )
         if armed not in live.standing_reactions:
             live.standing_reactions.append(armed)
         if armed not in live.pending_reactions:
             live.pending_reactions.append(armed)
+
+
+def _seed_armed_reactions(live: _LiveCombat, spec: PartyMemberSpec) -> None:
+    """``PartyMemberSpec.armed_reactions`` — arm each named reaction as the PC
+    enters the fight, in the spec's order (its priority), state-only: no
+    ``IntentSubmitted``, as with every other seeded state. A slug is a spell the
+    PC knows, else a feature its sources grant, else a feat it has; anything
+    else, or anything without a typed reaction trigger, is skipped with a
+    tracked warning rather than refused — the host asked for a standing
+    arrangement, not an action."""
+    owner = _find_combatant(live, spec.entity_id)
+    if owner is None:
+        return
+    loader = get_lib_loader()
+    known = set(live.spells_known_by_entity.get(spec.entity_id, []))
+    granted = _granted_feature_slugs(owner)
+    for slug in dict.fromkeys(spec.armed_reactions):
+        source: Any
+        if slug in known:
+            source, spell_id, feature_id = loader.get_spell(slug), slug, None
+        elif slug in granted:
+            source, spell_id, feature_id = loader.get_feature(slug), None, slug
+        elif slug in owner.feats:
+            source, spell_id, feature_id = loader.get_feat(slug), None, slug
+        else:
+            source, spell_id, feature_id = None, None, None
+        triggers = _reaction_triggers_of(source) if source is not None else []
+        if not triggers:
+            _LOGGER.warning(
+                "armed_reaction_skipped entity_id=%s slug=%s reason=%s",
+                spec.entity_id,
+                slug,
+                "not_held" if source is None else "no_reaction_trigger",
+            )
+            continue
+        _arm_standing(live, spec.entity_id, triggers, spell_id=spell_id, feature_id=feature_id)
 
 
 def _handle_disarm(live: _LiveCombat, current: Combatant, intent: PlayerIntent) -> None:
@@ -12587,12 +12661,16 @@ def _handle_disarm(live: _LiveCombat, current: Combatant, intent: PlayerIntent) 
 
 def _hook_rearm_standing_reactions(live: _LiveCombat, actor_id: str | None) -> None:
     """``turn_start`` hook — the actor's standing reactions are queued again
-    (the Reaction they spend refreshes at the same moment)."""
+    (the Reaction they spend refreshes at the same moment), in ARMING ORDER:
+    when two of them answer one trigger the first armed fires, so the order
+    the owner chose must survive one of them having fired and been re-queued
+    behind the others."""
     if actor_id is None:
         return
-    for armed in live.standing_reactions:
-        if armed.owner_id == actor_id and armed not in live.pending_reactions:
-            live.pending_reactions.append(armed)
+    mine = [pr for pr in live.standing_reactions if pr.owner_id == actor_id]
+    live.pending_reactions = [
+        pr for pr in live.pending_reactions if not (pr.owner_id == actor_id and pr.standing)
+    ] + mine
 
 
 def _drain_pre_resolution_reactions(
@@ -13348,7 +13426,9 @@ async def submit_player_intent(
 
     Validation:
       - ``actor_id`` must be in the live combat's initiative order
-      - it must currently be ``actor_id``'s turn
+      - it must currently be ``actor_id``'s turn — except for ``"arm"`` /
+        ``"disarm"``, which any living combatant may submit at any point of
+        the fight, before their first turn included
       - combat must not have ended
 
     On success: emit ``IntentSubmitted``, fetch the typed entity for the
