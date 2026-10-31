@@ -11798,17 +11798,9 @@ def _fire_triggered_activity(
         concentration=False,
         source_passive_effects=list(use.passive_effects),
         spell_book={},
-        passive_damage_modifiers=payload["passive_damage_modifiers"],
-        save_modifiers=payload["save_modifiers"],
-        check_modifiers=payload["check_modifiers"],
-        d20_test_penalty=payload["d20_test_penalty"],
-        target_distance_ft=_target_distance_map(live, owner.entity_id, [target]),
-        attacker_grappler_id=_condition_source_entity(live, owner, "grappled"),
-        legendary_resistance_armed=payload["legendary_resistance_armed"],
-        legendary_resistances_remaining_by_entity=payload[
-            "legendary_resistances_remaining_by_entity"
-        ],
-        undead_fortitude_holds=live.undead_fortitude_holds,
+        **_pc_attack_context_kwargs(
+            live, owner, [target], base_weapon=None, weapon=None, payload=payload
+        ),
     )
     pre_event_count = len(live.event_log)
     resolve_activity(activity, actx, weapon=None)
