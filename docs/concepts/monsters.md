@@ -129,3 +129,29 @@ engine consumes.
 
 All are tracked in `BACKLOG.md`. If you need them, resolve them host-side and
 apply the results through the engine's normal paths.
+
+## Replacing the monster AI
+
+A driven monster turn (`advance_monster_turn`) decides six things: whether to
+flee, whom to target, which stat-block action to try first, which spell a
+Spellcasting action casts, where an area lands, and how to close on a target
+out of reach. Each is one method of `MonsterAI`, whose defaults are the
+engine's own functions. A host subclasses it, overrides any subset, and
+installs the object once:
+
+```python
+from dnd5e_engine import MonsterAI, set_monster_ai
+
+class SpreadTheDamage(MonsterAI):
+    def choose_target(self, live, actor, enemies):
+        untouched = [c for c in enemies if c.hp_current == c.hp_max]
+        return untouched[0] if untouched else super().choose_target(live, actor, enemies)
+
+set_monster_ai(SpreadTheDamage())   # set_monster_ai(None) restores the default
+```
+
+The engine keeps the rules whatever the decision: a chosen target must be a
+living enemy it offered, the walk a `plan_move` returns is still taken step by
+step with opportunity attacks and the movement budget, and an action out of
+range is still skipped. `plan_move` returning `None` leaves the engine's own
+closing walk (shortest path, Dash when the gap needs it) in place.

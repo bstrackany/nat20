@@ -124,7 +124,6 @@ from dnd5e_engine.activities.monster_actions import (
     expand_action_to_activities,
     expand_action_to_parts,
     multiattack_count,
-    rank_monster_actions,
 )
 from dnd5e_engine.activities.passive_stats import (
     CombatantMovementModes,
@@ -255,6 +254,8 @@ from dnd5e_engine.types.combat import BehaviorProfile, Combatant, MonsterActionU
 from dnd5e_engine.types.conditions import ActiveCondition
 from dnd5e_engine.types.effects import ActiveEffect, ActiveEffectChange, ActiveEffectDuration
 from dnd5e_engine.views import LiveCombatView
+
+from .monster_ai import monster_ai
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -2094,7 +2095,7 @@ def _apply_monster_flee_stance(
     """
     if not (current.is_alive and current.hp_current > 0):
         return current
-    fleeing = _monster_is_fleeing(current) and not conditions_block_actions(
+    fleeing = monster_ai().is_fleeing(live, current) and not conditions_block_actions(
         _condition_names(current)
     )
     if fleeing:
@@ -2702,7 +2703,9 @@ def _resolve_monster_activities(
             # silent; the turn still advances through the pass shape below.
             _LOGGER.warning("monster_unresolved slug=%s", monster_slug)
         else:
-            ranked = rank_monster_actions(
+            ranked = monster_ai().rank_actions(
+                live,
+                current,
                 monster.actions,
                 is_available=lambda a: _monster_action_available(live, current, a),
                 has_limited_use_remaining=lambda a: _monster_limited_cast_remaining(
@@ -2716,7 +2719,7 @@ def _resolve_monster_activities(
                 if action_activities and all(
                     isinstance(a, CastActivity) for a in action_activities
                 ):
-                    candidate = _monster_cast_candidate(live, current, monster_action)
+                    candidate = monster_ai().choose_spell(live, current, monster_action)
                     if candidate is not None:
                         cast_activity, spell = candidate
                         cast_selection = (monster_action, cast_activity, spell)
@@ -2878,7 +2881,7 @@ def _resolve_monster_cast(
     pre_event_count = len(live.event_log)
     _emit_spell_cast(live, current.entity_id, spell, slot_level)
     area = _monster_area(spell.activities)
-    aim = None if area is None else _monster_aim(live, current, *area, _range_ft(spell.range))
+    aim = None if area is None else monster_ai().aim(live, current, *area, _range_ft(spell.range))
     if area is not None and aim is not None:
         target_list = _place_monster_area(live, current, spell.slug, area[1], aim)
         cover_origin = aim.origin
@@ -14349,7 +14352,7 @@ async def advance_monster_turn(
     skip_to_record_pass = (
         not current.is_alive
         or current.hp_current <= 0
-        or _monster_is_fleeing(current)
+        or monster_ai().is_fleeing(live, current)
         # SRD 5.2 Incapacitated — the monster takes no action this turn.
         or conditions_block_actions(_condition_names(current))
     )
@@ -14369,7 +14372,7 @@ async def advance_monster_turn(
     if not enemies:
         skip_to_record_pass = True
 
-    chosen_target: Combatant | None = _lowest_hp_target(enemies)
+    chosen_target: Combatant | None = monster_ai().choose_target(live, current, enemies)
 
     # ── Fleeing retreat ──────────────────────────────────────────
     # A live monster over the flee threshold spends its movement putting
@@ -14425,16 +14428,21 @@ async def advance_monster_turn(
             and target_zone is not None
             and not _in_range_with_los(live.topology, attacker_zone, target_zone, monster_range_ft)
         ):
-            # Plan the path and walk it greedily within budget.
-            path = live.topology.shortest_path(attacker_zone, target_zone)
-            dashed_budget = _monster_dash_movement_budget(
-                _path_total_distance(live.topology, path),
-                current.movement_remaining,
-                # SRD 5.2 Dash adds the creature's EFFECTIVE Speed: a Speed-0
-                # monster (Grappled / Restrained / …) "can't increase" it, so
-                # the gambit is declined outright (budget <= 0 → None).
-                _effective_speed(current, live),
-            )
+            # Plan the path and walk it greedily within budget — the installed
+            # ``MonsterAI`` may plan the approach instead (``plan_move``).
+            planned = monster_ai().plan_move(live, current, chosen_target, monster_range_ft)
+            if planned is None:
+                path = live.topology.shortest_path(attacker_zone, target_zone)
+                dashed_budget = _monster_dash_movement_budget(
+                    _path_total_distance(live.topology, path),
+                    current.movement_remaining,
+                    # SRD 5.2 Dash adds the creature's EFFECTIVE Speed: a Speed-0
+                    # monster (Grappled / Restrained / …) "can't increase" it, so
+                    # the gambit is declined outright (budget <= 0 → None).
+                    _effective_speed(current, live),
+                )
+            else:
+                path, dashed_budget = planned
             if dashed_budget is not None and current.action_available:
                 dashed_this_turn = True
                 for idx, c in enumerate(live.initiative):

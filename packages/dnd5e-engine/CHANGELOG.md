@@ -16,6 +16,14 @@ caster takes. Requires the matching `dnd5e-srd-data`.
 
 ### Added
 
+- **`MonsterAI`** (`monster_ai.py`) — the decisions a driven monster turn
+  makes, one method each (`is_fleeing`, `choose_target`, `rank_actions`,
+  `choose_spell`, `aim`, `plan_move`), behind one object a host installs with
+  `set_monster_ai`. Each default method is the engine's existing function,
+  unchanged; `plan_move` defaults to leaving the engine's closing walk in
+  place. `advance_monster_turn` now calls the installed object at those six
+  points and keeps every rule (action economy, the walk itself, opportunity
+  attacks, resolution). A host subclasses it and overrides any subset.
 - **`PartyMemberSpec.armed_reactions`** — the reactions a PC keeps armed from
   the first moment of the fight (spell, feature or feat slugs), seeded by
   `start_combat` as an `"arm"` intent would arrange them on the PC's turn, so

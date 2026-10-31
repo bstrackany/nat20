@@ -41,6 +41,7 @@ from dnd5e_engine.build_spec import (
 from dnd5e_engine.check import CheckKind, CheckResult, CheckSpec, resolve_check
 from dnd5e_engine.events import AdvantageSource, CombatEvent, IntentType
 from dnd5e_engine.lib_loader import configure_lib_loader
+from dnd5e_engine.monster_ai import MonsterAI, set_monster_ai
 from dnd5e_engine.orchestrator import (
     CombatHandle,
     IntentRejectedError,
@@ -111,6 +112,7 @@ __all__ = [
     "IntentType",
     "LiveCombatView",
     "LootDrop",
+    "MonsterAI",
     "PartyMemberSpec",
     "PlayerIntent",
     "RecoveryPeriod",
@@ -142,6 +144,7 @@ __all__ = [
     "resolve_ritual_cast",
     "resolve_short_rest",
     "roll_dice_str",
+    "set_monster_ai",
     "start_combat",
     "submit_player_intent",
 ]
