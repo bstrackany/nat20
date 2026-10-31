@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Color Spray's Blinded effect applies the Blinded condition.** The pinned
+  Foundry effect is named Blinded and carries no status (a module applied it);
+  the translator appends it from `_EFFECT_STATUS_CORRECTIONS`, a per-effect
+  table beside `_EFFECT_CHANGE_CORRECTIONS`, so a failed save now blinds until
+  the end of the caster's next turn as the SRD 5.2 text says.
+
 - **`Activity.trigger`** (`ActivityTrigger`, `ActivityTriggerKind`,
   `ActivityTriggerSubject`) — when an activity fires, when not with its
   parent's use: `turn_start`, `turn_end`, `hits`, `hit_by_attack`,

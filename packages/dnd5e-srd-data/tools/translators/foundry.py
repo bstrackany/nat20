@@ -2405,6 +2405,32 @@ def _apply_effect_change_corrections(
     return out
 
 
+#: ``(spell slug, effect _id)`` → the conditions the effect applies although its
+#: pinned Foundry ``statuses`` is empty (a module applied them). Color Spray: "must
+#: succeed on a Constitution saving throw or have the Blinded condition until the
+#: end of your next turn" — the effect is named Blinded and carries nothing.
+_EFFECT_STATUS_CORRECTIONS: dict[tuple[str, str], list[str]] = {
+    ("color-spray", "DKl58EVNaSX976co"): ["blinded"],
+}
+
+
+def _apply_effect_status_corrections(
+    slug: str, effects: list[PassiveEffect]
+) -> list[PassiveEffect]:
+    """Append each effect's ``_EFFECT_STATUS_CORRECTIONS`` statuses. Copy-on-write
+    like ``_apply_effect_change_corrections``; a status already present is not
+    added twice."""
+    out: list[PassiveEffect] = []
+    for effect in effects:
+        extra = _EFFECT_STATUS_CORRECTIONS.get((slug, effect.id))
+        if extra:
+            missing = [s for s in extra if s not in effect.statuses]
+            if missing:
+                effect = effect.model_copy(update={"statuses": [*effect.statuses, *missing]})
+        out.append(effect)
+    return out
+
+
 def _apply_activity_triggers(slug: str, activities: list[Activity]) -> list[Activity]:
     """Set each activity's ``trigger`` from ``_ACTIVITY_TRIGGERS``. Copy-on-write
     like ``_apply_spell_damage_type_corrections``."""
@@ -2490,7 +2516,9 @@ def translate_spell_yaml(
                 ),
             ),
         ),
-        passive_effects=_apply_effect_change_corrections(slug, _passive_effects(doc)),
+        passive_effects=_apply_effect_status_corrections(
+            slug, _apply_effect_change_corrections(slug, _passive_effects(doc))
+        ),
         provenance=_provenance(yaml_path, ingest_date, ingest_version),
         review=ReviewState(),
         foundry_uuid=_spell_foundry_uuid(yaml_path, doc),

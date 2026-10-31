@@ -137,7 +137,9 @@
       },
       "id": "DKl58EVNaSX976co",
       "name": "Blinded",
-      "statuses": [],
+      "statuses": [
+        "blinded"
+      ],
       "transfer": false
     }
   ],

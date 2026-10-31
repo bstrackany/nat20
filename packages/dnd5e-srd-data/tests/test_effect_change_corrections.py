@@ -19,8 +19,10 @@ from dnd5e_srd_data.schema.common import PassiveEffectChange
 from tools.translators.foundry import (
     _ACTIVITY_EFFECT_REF_CORRECTIONS,
     _EFFECT_CHANGE_CORRECTIONS,
+    _EFFECT_STATUS_CORRECTIONS,
     _apply_activity_effect_ref_corrections,
     _apply_effect_change_corrections,
+    _apply_effect_status_corrections,
 )
 
 LOADER = BundledAssetLoader()
@@ -90,3 +92,20 @@ def test_the_table_adds_each_change_once_and_leaves_other_effects_alone() -> Non
     assert _apply_effect_change_corrections("shield", list(shield.passive_effects)) == list(
         shield.passive_effects
     )
+
+
+def test_color_sprays_blinded_effect_applies_the_blinded_condition() -> None:
+    """The pinned Foundry effect is named Blinded and carries no status."""
+    spell = LOADER.get_spell("color-spray")
+    assert spell is not None
+    assert "condition until the end of your next turn" in spell.description
+    assert _effect("color-spray", "DKl58EVNaSX976co").statuses == ["blinded"]
+    bare = [e.model_copy(update={"statuses": []}) for e in spell.passive_effects]
+    corrected = _apply_effect_status_corrections("color-spray", bare)
+    assert corrected[0].statuses == ["blinded"]
+    assert _apply_effect_status_corrections("color-spray", corrected) == corrected
+    assert set(_EFFECT_STATUS_CORRECTIONS) == {("color-spray", "DKl58EVNaSX976co")}
+    for (slug, effect_id), statuses in _EFFECT_STATUS_CORRECTIONS.items():
+        data = json.loads((CANONICAL / "spells" / f"{slug}.json").read_text(encoding="utf-8"))
+        [effect] = [e for e in data["passive_effects"] if e["id"] == effect_id]
+        assert all(st in effect["statuses"] for st in statuses), (slug, effect_id)
