@@ -91,6 +91,13 @@ _KNOWN_UNRESOLVABLE_GRANTS: dict[str, str] = {
     ),
 }
 
+# Grants the class text makes that Foundry's advancement omits, appended to the
+# resolved ItemGrant refs: ``(canonical subdir, slug)`` -> ``(ref_type, slug, level)``.
+# Ranger's Favored Enemy: "You always have the Hunter's Mark spell prepared."
+_MISSING_GRANTS: dict[tuple[str, str], list[tuple[str, str, int]]] = {
+    ("classes", "ranger"): [("spell", "hunters-mark", 1)],
+}
+
 
 def _gate_for_yaml(yaml_path: Path) -> GateDecision:
     """Three-source SRD agreement. In Phase 7a PR 1 we approximate this as
@@ -534,6 +541,8 @@ def main() -> int:
                             schedule=schedule,
                         )
                     )
+            extra = _MISSING_GRANTS.get((canonical_subdir, path.stem), [])
+            granted += [GrantRef(ref_type=t, slug=s, level=lv) for t, s, lv in extra]
             _assert_emitted(granted)
             for ch in choices:
                 _assert_emitted(list(ch.pool))

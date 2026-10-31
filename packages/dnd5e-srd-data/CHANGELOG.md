@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **The Ranger is granted Hunter's Mark at level 1.** Favored Enemy says "You
+  always have the Hunter's Mark spell prepared", but Foundry's advancement omits
+  the grant; regen appends it from `_MISSING_GRANTS`, so the class carries a
+  `ref_type: spell` grant like the Paladin's Divine Smite.
+
 - **Color Spray's Blinded effect applies the Blinded condition.** The pinned
   Foundry effect is named Blinded and carries no status (a module applied it);
   the translator appends it from `_EFFECT_STATUS_CORRECTIONS`, a per-effect

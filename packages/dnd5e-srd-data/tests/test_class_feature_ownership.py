@@ -37,3 +37,12 @@ def test_barbarian_and_monk_unarmored_defense_carry_their_own_formula() -> None:
     monk_class = LOADER.get_class("monk")
     assert monk_class is not None
     assert "unarmored-defense-monk" in {g.slug for g in monk_class.granted_features}
+
+
+def test_ranger_is_granted_hunters_mark_at_level_one() -> None:
+    """Favored Enemy: "You always have the Hunter's Mark spell prepared." Foundry's
+    advancement omits the grant; ``tools/regen.py`` ``_MISSING_GRANTS`` adds it."""
+    ranger = LOADER.get_class("ranger")
+    assert ranger is not None
+    grants = {(g.ref_type, g.slug, g.level) for g in ranger.granted_features}
+    assert ("spell", "hunters-mark", 1) in grants

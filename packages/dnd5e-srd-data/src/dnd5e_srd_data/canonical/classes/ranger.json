@@ -890,6 +890,12 @@
       "optional": false,
       "ref_type": "feature",
       "slug": "foe-slayer"
+    },
+    {
+      "level": 1,
+      "optional": false,
+      "ref_type": "spell",
+      "slug": "hunters-mark"
     }
   ],
   "hit_die": "d10",
