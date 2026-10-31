@@ -59,7 +59,7 @@ gaps so that homebrew is a JSON/YAML file and a host can bring its own monster b
 ## Still worked around on the Party of None side (not engine changes)
 
 Two SRD movement rules the closing walk ignores are monkey-patched in
-`party-of-none/party_of_none/rules.py`: a monster may end its move in an occupied square
+`party-of-none/src/party_of_none/rules.py`: a monster may end its move in an occupied square
 (`_forbid_stacking`) and paths straight through its allies (`_route_around_creatures`). They are
 rules, not AI preference, and belong in `_take_walk_step` / the path planner — proposal 27 in
 `../nat20_engine_proposals.md`. A better default monster AI (heals, spreads damage, aims areas
