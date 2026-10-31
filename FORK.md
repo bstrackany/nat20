@@ -50,7 +50,7 @@ gaps so that homebrew is a JSON/YAML file and a host can bring its own monster b
 - Homebrew spells with triggers and self-targeting (2, 3); 133 modelled so far.
 - Subclass features and feats modelled from the table's books as `activities` +
   `passive_effects` (2, 4, 7): 354 features, 192 feats, checked by
-  `party-of-now/scripts/check_features.py`.
+  `party-of-none/scripts/check_features.py`.
 - Reactions armed for every character as the fight opens, with a per-character priority
   order on the sheet (5, 8).
 - The table's fair/deadly targeting is a `MonsterAI` subclass (9) instead of a monkey-patch.
@@ -59,7 +59,7 @@ gaps so that homebrew is a JSON/YAML file and a host can bring its own monster b
 ## Still worked around on the Party of None side (not engine changes)
 
 Two SRD movement rules the closing walk ignores are monkey-patched in
-`party-of-now/party_of_none/rules.py`: a monster may end its move in an occupied square
+`party-of-none/party_of_none/rules.py`: a monster may end its move in an occupied square
 (`_forbid_stacking`) and paths straight through its allies (`_route_around_creatures`). They are
 rules, not AI preference, and belong in `_take_walk_step` / the path planner — proposal 27 in
 `../nat20_engine_proposals.md`. A better default monster AI (heals, spreads damage, aims areas
