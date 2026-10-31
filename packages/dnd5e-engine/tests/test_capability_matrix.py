@@ -871,8 +871,8 @@ _PROBES: dict[str, tuple[Any, str]] = {
         ),
         "⚠️",
     ),
-    # Held activities fire at turn boundaries, on hits and on later uses; a
-    # creature in an area at its turn still has no producer (BACKLOG.md).
+    # Held activities fire at turn boundaries and on hits; a later use is not
+    # re-fired, and a creature in an area at its turn has no producer (BACKLOG.md).
     "Activities that fire later": (
         lambda: (
             "def _fire_turn_triggers(" in _src("orchestrator.py")

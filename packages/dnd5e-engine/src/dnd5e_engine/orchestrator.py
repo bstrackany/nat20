@@ -3328,7 +3328,7 @@ class _LiveCombat:
     # turn start whenever they are not pending (``_hook_rearm_standing_reactions``).
     standing_reactions: list[_PendingReaction] = field(default_factory=list)
     # The uses whose activities fire later (``Activity.trigger``): Acid Arrow's
-    # lingering acid, Hex's extra damage, Sunbeam's later lines. Made by
+    # lingering acid, Hex's extra damage. Made by
     # ``_hold_use`` when a cast, feature or item use resolves; walked by the
     # turn hooks and ``_fire_resolution_triggers``; dropped once no effect of
     # the use remains (``triggers.use_is_live``).
@@ -10883,7 +10883,6 @@ class _ActionCost:
 def _classify_action_cost(
     intent: PlayerIntent,
     feature_invocation: _FeatureInvocation | None,
-    later_use: tuple[HeldUse, Any] | None = None,
 ) -> _ActionCost:
     """SRD §Action Economy — classify an intent's action cost BEFORE emitting
     IntentSubmitted. Cast spells consult their asset's typed
@@ -10898,11 +10897,6 @@ def _classify_action_cost(
         cast_spell_for_timing.casting_time.unit if cast_spell_for_timing is not None else None
     )
     is_bonus_action = casting_unit == CastingTimeUnit.BONUS
-    # A later use of a running spell costs what its own activity says, not the
-    # cast: Heat Metal's "you can take a Bonus Action on each of your later
-    # turns to deal this damage again" after an Action cast.
-    if later_use is not None:
-        is_bonus_action = later_use[1].activation.type == "bonus"
     # SRD §Action Economy — a class feature is a Bonus Action when its (single)
     # activity's ``activation.type`` is ``"bonus"`` (Rage, Second Wind). A bonus
     # action does NOT end the turn, so the actor may rage then swing on the same
@@ -11560,36 +11554,14 @@ def _cast_activities(spell: Spell, intent: PlayerIntent) -> list[Any]:
     return [a for a in spell.activities if fires_with_use(a)]
 
 
-def _later_use_of(
-    live: _LiveCombat, actor_id: str, intent: PlayerIntent
-) -> tuple[HeldUse, Any] | None:
-    """The live use and ``later_use`` activity a ``cast_spell`` naming
-    ``activity_id`` repeats — Sunbeam's "you can take a Magic action to create
-    a new Line of radiance" while the spell lasts — or ``None``: not a cast, no
-    ``activity_id``, the activity is not a later use, or the actor holds no live
-    use of the spell."""
-    if not (intent.intent_type == "cast_spell" and intent.spell_id and intent.activity_id):
-        return None
-    for use in live.held_uses:
-        if use.owner_id != actor_id or use.source_slug != intent.spell_id:
-            continue
-        if not use_is_live(use, live.active_effects):
-            continue
-        for activity in use.activities:
-            if activity.id == intent.activity_id and is_later_use(activity):
-                return use, activity
-    return None
-
-
 def _reject_unknown_cast_activity(
     live: _LiveCombat, current: Combatant, actor_id: str, intent: PlayerIntent
 ) -> bool:
     """``CastFailed(reason="activity_invalid")`` for a cast whose
-    ``activity_id`` names none of the spell's activities the caster can use now:
-    none at all, one the spell holds for a later moment (Acid Arrow's lingering
-    acid fires at the end of the target's turn, never by name), or a later use
-    of a spell the caster has no live use of (a new Sunbeam line with no Sunbeam
-    running). Runs before the slot gate, so the refused cast spends nothing.
+    ``activity_id`` names nothing that fires with the cast: none of the spell's
+    activities, or one the spell holds for a later moment (Acid Arrow's
+    lingering acid, Sunbeam's later lines — re-firing one by name is not
+    supported). Runs before the slot gate, so the refused cast spends nothing.
 
     Returns ``True`` iff the cast was REJECTED (the turn already advanced — the
     caller must return)."""
@@ -11599,7 +11571,7 @@ def _reject_unknown_cast_activity(
     if spell is None:
         return False
     chosen = _cast_activities(spell, intent)
-    if chosen and (fires_with_use(chosen[0]) or _later_use_of(live, actor_id, intent)):
+    if chosen and fires_with_use(chosen[0]):
         return False
     _emit(
         live,
@@ -11618,10 +11590,8 @@ def _reject_unknown_cast_activity(
 # (``_hook_fire_turn_*_triggers``) and on the hits and damage of a resolution
 # (``_fire_resolution_triggers``), and resolves each fired activity through the
 # same ``build_activity_context`` + ``resolve_activity`` path as a cast
-# (``_fire_triggered_activity``). A ``later_use`` activity is not fired here:
-# the caller repeats it with a ``cast_spell`` naming its ``activity_id``
-# (``_later_use_of``), which spends the activity's own action economy and no
-# slot.
+# (``_fire_triggered_activity``). A ``later_use`` activity never fires: it
+# only marks a line the cast itself does not resolve.
 
 
 def _spell_duration_rounds(spell: Spell) -> int | None:
@@ -11754,25 +11724,6 @@ def _hold_use_for_intent(
         )
 
 
-def _emit_activity_triggered(
-    live: _LiveCombat, use: HeldUse, activity: Any, *, subject_id: str, target_id: str
-) -> None:
-    trigger = trigger_of(activity)
-    _emit(
-        live,
-        ActivityTriggered(
-            actor_id=use.owner_id,
-            source_id=use.source_slug,
-            source_kind=use.source_kind,
-            activity_id=activity.id,
-            activity_name=activity.name,
-            trigger=trigger.kind.value if trigger is not None else "later_use",
-            subject_id=subject_id,
-            target_id=target_id,
-        ),
-    )
-
-
 def _end_use_effects_on(
     live: _LiveCombat, use: HeldUse, target_id: str, reason: EffectExpiryReason
 ) -> None:
@@ -11822,7 +11773,19 @@ def _fire_triggered_activity(
         if use.fired_turns.get(activity.id) == this_turn:
             return
         use.fired_turns[activity.id] = this_turn
-    _emit_activity_triggered(live, use, activity, subject_id=subject_id, target_id=target_id)
+    _emit(
+        live,
+        ActivityTriggered(
+            actor_id=use.owner_id,
+            source_id=use.source_slug,
+            source_kind=use.source_kind,
+            activity_id=activity.id,
+            activity_name=activity.name,
+            trigger=trigger.kind.value,
+            subject_id=subject_id,
+            target_id=target_id,
+        ),
+    )
     payload = _build_hydration_payload(live, caster=owner)
     actx = build_activity_context(
         owner,
@@ -12026,11 +11989,7 @@ def _apply_pre_slot_cast_gates(
         return True
     if _reject_unknown_cast_activity(live, current, actor_id, intent):
         return True
-    # A later use of a running spell is not a cast ("you can take a Magic
-    # action to call down lightning in that way again"), so nothing to counter.
-    if _later_use_of(live, actor_id, intent) is None and _drain_counterspell_reaction(
-        live, current, actor_id, intent
-    ):
+    if _drain_counterspell_reaction(live, current, actor_id, intent):
         return True
     return _reject_over_count_targets(live, current, actor_id, intent)
 
@@ -12053,9 +12012,6 @@ def _consume_spell_slot(
     and the turn advanced — the caller must return); ``False`` otherwise.
     """
     if not (intent.intent_type == "cast_spell" and intent.spell_id):
-        return False
-    # A later use of a running spell spends no slot: the cast already did.
-    if _later_use_of(live, actor_id, intent) is not None:
         return False
     slot_gate_spell = get_lib_loader().get_spell(intent.spell_id)
     if slot_gate_spell is None:
@@ -12135,8 +12091,6 @@ def _emit_spell_cast_for_on_turn_intent(
     module — silently skip rather than raise)."""
     if not (intent.intent_type == "cast_spell" and intent.spell_id):
         return
-    if _later_use_of(live, actor_id, intent) is not None:
-        return  # a later use of a running spell is not a cast
     spell = get_lib_loader().get_spell(intent.spell_id)
     if spell is None:
         return
@@ -13496,8 +13450,7 @@ async def submit_player_intent(
     # the turn like an Action so existing reaction-spell scenarios keep
     # working. The proper off-turn path will reject reactions through
     # this entrypoint.
-    later_use = _later_use_of(live, actor_id, intent)
-    action_cost = _classify_action_cost(intent, feature_invocation, later_use)
+    action_cost = _classify_action_cost(intent, feature_invocation)
     cast_spell_for_timing = action_cost.cast_spell_for_timing
     is_bonus_action = action_cost.is_bonus_action
     is_reaction_cast = action_cost.is_reaction_cast
@@ -13730,15 +13683,6 @@ async def submit_player_intent(
 
     pre_event_count = len(live.event_log)
 
-    if later_use is not None and activities:
-        _emit_activity_triggered(
-            live,
-            later_use[0],
-            later_use[1],
-            subject_id=actor_id,
-            target_id=targets[0].entity_id if targets else actor_id,
-        )
-
     # SRD 5.2 Spiritual Weapon — a construct's Bonus-Action repeat resolves
     # here, after the target's readied reactions drained (no-op otherwise).
     _resolve_construct_attack_intent(live, current, intent)
@@ -13800,15 +13744,10 @@ async def submit_player_intent(
             targets,
             rng=live.rng,
             event_emitter=lambda ev: _emit(live, ev),
-            # A later use scales as its cast did.
-            slot_level=later_use[0].slot_level if later_use is not None else intent.slot_level,
+            slot_level=intent.slot_level,
             base_spell_level=cast_spell.level if cast_spell is not None else None,
             spellcasting_ability=spellcasting_ability,
-            # A later use of a running spell is not a new cast: it neither
-            # concentrates afresh nor ends the concentration the cast holds.
-            concentration=(
-                cast_spell.concentration if cast_spell is not None and later_use is None else False
-            ),
+            concentration=cast_spell.concentration if cast_spell is not None else False,
             source_passive_effects=(
                 list(cast_spell.passive_effects) if cast_spell else feature_passive_effects
             ),
@@ -13952,7 +13891,7 @@ async def submit_player_intent(
     _fold_resolution_outcome(
         live,
         current,
-        spell=cast_spell if later_use is None else None,
+        spell=cast_spell,
         actx=actx,
         pre_event_count=pre_event_count,
         concentration_max_rounds=_concentration_max_rounds(cast_spell),
@@ -13961,10 +13900,7 @@ async def submit_player_intent(
 
     # The activities the use holds for later (``Activity.trigger``), and the
     # ones this resolution's hits and damage fire now.
-    if later_use is not None:
-        _record_use_effects(live, later_use[0], pre_event_count)
-    else:
-        _hold_use_for_intent(live, current, intent, resolved, pre_event_count)
+    _hold_use_for_intent(live, current, intent, resolved, pre_event_count)
     _fire_resolution_triggers(live, current, pre_event_count)
 
     # SRD §Hold Person / §Hold Monster — *"At the end of each of its turns,

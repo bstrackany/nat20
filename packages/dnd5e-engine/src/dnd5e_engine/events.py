@@ -675,16 +675,14 @@ class ReactionTriggered(BaseModel):
 
 #: When an activity fires, when not with its parent's use —
 #: ``dnd5e_srd_data.schema.common.ActivityTriggerKind``.
-ActivityTriggerMoment = Literal[
-    "turn_start", "turn_end", "hits", "hit_by_attack", "takes_damage", "later_use"
-]
+ActivityTriggerMoment = Literal["turn_start", "turn_end", "hits", "hit_by_attack", "takes_damage"]
 
 
 class ActivityTriggered(BaseModel):
     """An activity a spell, feature or item held for later fires now: Acid
     Arrow's lingering acid at the end of the target's turn, Hex's extra damage
-    on a hit, Sunbeam's new line as a later Magic action. Emitted before the
-    activity's own events (its save, damage, effect). ``actor_id`` is the
+    on a hit. Emitted before the activity's own events (its save, damage,
+    effect). ``actor_id`` is the
     creature that used the source; ``subject_id`` the creature whose moment
     this is (the one whose turn ends, who hit, who was hit); ``target_id``
     the creature the activity resolves against."""

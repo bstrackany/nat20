@@ -44,9 +44,8 @@ name, a cast resolves every activity that fires with the cast.
 
 Not every activity fires with the use. SRD 5.2 puts part of many spells
 later — Acid Arrow's "2d4 Acid damage at the end of its next turn", Hunter's
-Mark's "extra damage to the target whenever you hit it with an attack roll",
-Sunbeam's "you can take a Magic action to create a new Line of radiance" — and
-the corpus marks such an activity with `Activity.trigger`:
+Mark's "extra damage to the target whenever you hit it with an attack roll" —
+and the corpus marks such an activity with `Activity.trigger`:
 
 | `trigger.kind` | Fires when | Resolves against |
 |---|---|---|
@@ -54,7 +53,7 @@ the corpus marks such an activity with `Activity.trigger`:
 | `hits` | the subject's attack roll hits (`attack`: melee or ranged only; `against_bearer`: only a creature bearing an effect of the use) | the creature hit |
 | `hit_by_attack` | an attack roll hits the subject | the attacker |
 | `takes_damage` | the subject takes damage | the creature whose action dealt it |
-| `later_use` | the caster repeats it with a `cast_spell` naming its `activity_id` (`also_at_cast`: it fires with the cast too) | the intent's targets |
+| `later_use` | never by the engine: the cast does not resolve it (`also_at_cast`: it does) | — |
 
 The subject is each creature bearing an effect of the use (`subject: target`,
 the default) or the creature that used it (`subject: caster`). The engine
@@ -70,11 +69,9 @@ a single time and then ends the use's effects on the subject (the lingering
 acid is spent); `ends_on_save` ends them on a creature whose save succeeds
 (Searing Smite: "On a successful save, the spell ends").
 
-A later use costs what its own activity's `activation.type` says — Heat
-Metal's repeat is a Bonus Action after an Action to cast — spends no slot,
-emits no `SpellCast`, draws no Counterspell and leaves the cast's
-concentration as it is. Without a live use of the spell it is refused with
-`activity_invalid`.
+A `later_use` activity (Sunbeam's new line, Haste's lethargy) only keeps the
+cast from resolving it; re-firing one is not supported, and a `cast_spell`
+naming it in `activity_id` is refused with `activity_invalid`.
 
 An activity with no trigger behaves exactly as before, so content that never
 sets the field is unchanged.

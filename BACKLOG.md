@@ -1320,9 +1320,9 @@ zone + apply logic:
   Beings' emanation saves), a numbered later round (Storm of Vengeance's
   turns 2–5), the caster's own turn end once (Earthquake's "End of Turn
   Fissures") and a bead touched or detonated (Delayed Blast Fireball). Each
-  needs a persistent area or a round counter on the held use. Hex's "Curse
-  New Creature" ships as an action where the text says Bonus Action, so the
-  later use costs an Action.
+  needs a persistent area or a round counter on the held use. A `later_use`
+  activity (Sunbeam's new line, Hex's "Curse New Creature") is held back from
+  the cast but never re-fired: a `cast_spell` naming it is `activity_invalid`.
   (`packages/dnd5e-engine/src/dnd5e_engine/orchestrator.py::_fire_turn_triggers`,
   `packages/dnd5e-srd-data/tools/translators/foundry.py::_ACTIVITY_TRIGGERS`)
 - **An item's hazard area saves at use time, not when a creature enters it

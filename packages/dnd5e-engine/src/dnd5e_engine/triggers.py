@@ -88,7 +88,8 @@ def trigger_of(activity: Any) -> ActivityTrigger | None:
 
 
 def is_later_use(activity: Any) -> bool:
-    """A ``later_use`` activity: the caller chooses when, on a later turn."""
+    """A ``later_use`` activity: not resolved at cast, and never fired by the
+    engine (re-firing one by name is not supported)."""
     trigger = trigger_of(activity)
     return trigger is not None and trigger.kind is ActivityTriggerKind.LATER_USE
 

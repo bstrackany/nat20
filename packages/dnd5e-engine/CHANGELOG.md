@@ -36,14 +36,11 @@ caster takes. Requires the matching `dnd5e-srd-data`.
   turn where it is.
 - **`PlayerIntent.activity_id` on a `cast_spell`** — names the one spell
   activity the cast resolves (Sunbeam's Initial Cast), as it already does on a
-  `use_feature`; also how a caster repeats a `later_use` activity of a running
-  spell (Sunbeam's new line, Call Lightning's next bolt, Heat Metal's reheat),
-  for the activity's own action cost and no slot. Omitted, every activity that
-  fires with the cast resolves.
+  `use_feature`. Omitted, every activity that fires with the cast resolves.
 - **`CastFailedReason` `"activity_invalid"`** — a cast whose `activity_id`
-  names none of the spell's activities the caster can use now: none at all,
-  one held for a later moment, or a later use of a spell with no live use.
-  Refused before the slot is spent.
+  names nothing that fires with the cast: none of the spell's activities, or
+  one held for a later moment (re-firing a `later_use` activity is not
+  supported). Refused before the slot is spent.
 - **`ActivityTriggered`** (`dnd5e_engine.events`) — a held activity fires:
   the source, the activity, the moment (`trigger`), the subject and the
   target. Emitted before the activity's own events.
@@ -119,8 +116,8 @@ caster takes. Requires the matching `dnd5e-srd-data`.
   Weird's frightened creatures save at the end of their turns, the spell
   ending on a success; Hex and Hunter's Mark add their damage on each hit
   against the marked creature; Sunbeam's, Call Lightning's, Heat Metal's,
-  Vampiric Touch's and Telekinesis's repeats wait for the caster's later
-  action. A host that read the later damage from the cast's events reads it
+  Vampiric Touch's and Telekinesis's repeats are `later_use` and not resolved
+  (the engine does not re-fire them). A host that read the later damage from the cast's events reads it
   from the later turn's instead.
 
 ## [0.7.0]

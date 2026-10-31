@@ -3,8 +3,7 @@ on a cast.
 
 SRD 5.2 puts part of many spells after the cast: Acid Arrow's "2d4 Acid damage
 at the end of its next turn", Hunter's Mark's "extra damage to the target
-whenever you hit it with an attack roll", Sunbeam's "you can take a Magic
-action to create a new Line of radiance", Searing Smite's "At the start of each
+whenever you hit it with an attack roll", Searing Smite's "At the start of each
 of its turns until the spell ends". Each such activity carries a trigger in the
 corpus; the engine holds the use (``dnd5e_engine.triggers.HeldUse``) and fires
 the activity at its moment. A cast that names an ``activity_id`` resolves only
@@ -195,7 +194,7 @@ def test_a_cast_naming_an_activity_resolves_only_that_one():
     [
         ("acid-arrow", "not-an-activity"),
         ("acid-arrow", ACID_ARROW_LINGER),  # fires at the end of the target's turn, never by name
-        ("sunbeam", SUNBEAM_NEW_LINE),  # a later use of a Sunbeam not running
+        ("sunbeam", SUNBEAM_NEW_LINE),  # a later_use line: re-firing by name is not supported
     ],
 )
 def test_an_activity_the_caster_cannot_use_now_is_refused_before_the_slot_is_spent(
@@ -371,67 +370,6 @@ def test_hunters_mark_adds_its_damage_when_the_caster_hits_the_marked_creature_o
     # concentration dropped: the mark is gone, and the third hit adds nothing
     assert any(e.reason == "concentration_drop" for e in _events(live, EffectExpired))
     assert live.held_uses == []
-
-
-# ── later uses ───────────────────────────────────────────────────────────────
-
-
-def test_a_later_use_repeats_the_activity_without_a_slot_or_a_new_cast():
-    """SRD 5.2 Sunbeam: "Until the spell ends, you can take a Magic action to
-    create a new Line of radiance." """
-
-    async def _go():
-        handle, live = await _start([_caster(["sunbeam"], {6: 1})], [_foe(col=9)])
-        await submit_player_intent(
-            handle, actor_id="char:caster", intent=_cast("sunbeam", target_id="mon:foe")
-        )
-        await advance_monster_turn(handle)  # 45 ft off: the foe closes but can't reach
-        await submit_player_intent(
-            handle,
-            actor_id="char:caster",
-            intent=_cast("sunbeam", target_id="mon:foe", activity_id=SUNBEAM_NEW_LINE),
-        )
-        return live
-
-    live = asyncio.run(_go())
-    assert not _events(live, CastFailed)
-    assert len(_events(live, SpellCast)) == 1
-    assert live.spell_slots_by_entity["char:caster"] == {6: 0}
-    assert len(_events(live, SaveRolled)) == 2
-    [fired] = _events(live, ActivityTriggered)
-    assert (fired.trigger, fired.activity_id, fired.actor_id) == (
-        "later_use",
-        SUNBEAM_NEW_LINE,
-        "char:caster",
-    )
-    # the later line neither restarts nor ends the cast's concentration
-    assert not any(e.reason == "concentration_drop" for e in _events(live, EffectExpired))
-    assert "char:caster" in live.concentration_chain
-
-
-def test_a_later_use_costs_what_its_own_activity_says():
-    """SRD 5.2 Heat Metal: "you can take a Bonus Action on each of your later
-    turns to deal this damage again" after an Action to cast."""
-
-    async def _go():
-        handle, live = await _start([_caster(["heat-metal"], {2: 1})], [_foe(col=9)])
-        await submit_player_intent(
-            handle, actor_id="char:caster", intent=_cast("heat-metal", target_id="mon:foe")
-        )
-        await advance_monster_turn(handle)
-        await submit_player_intent(
-            handle,
-            actor_id="char:caster",
-            intent=_cast("heat-metal", target_id="mon:foe", activity_id="YPEmwJHX7g68307N"),
-        )
-        return live, live.current_actor_id
-
-    live, actor_after = asyncio.run(_go())
-    assert not _events(live, CastFailed)
-    assert actor_after == "char:caster"  # a Bonus Action keeps the turn
-    caster = next(c for c in live.initiative if c.entity_id == "char:caster")
-    assert (caster.bonus_action_available, caster.action_available) == (False, True)
-    assert len([e for e in _events(live, DamageApplied) if e.damage_type == "fire"]) == 2
 
 
 # ── a trigger a consumer's own data sets ─────────────────────────────────────
