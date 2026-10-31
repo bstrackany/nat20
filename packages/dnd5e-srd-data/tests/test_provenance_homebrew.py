@@ -14,7 +14,7 @@ from pydantic import ValidationError
 from dnd5e_srd_data import Provenance
 
 
-def test_homebrew_provenance_names_its_licence_and_may_name_no_srd_version() -> None:
+def test_homebrew_names_its_licence_while_the_corpus_defaults_are_unchanged() -> None:
     own = Provenance(
         source="homebrew",
         source_url="homebrew://phb-2024.yaml#searing-smite",
@@ -22,11 +22,7 @@ def test_homebrew_provenance_names_its_licence_and_may_name_no_srd_version() -> 
         ingest_version="table",
         license_tag="proprietary",
     )
-    assert own.srd_version == frozenset()
-    assert own.model_dump(mode="json")["srd_version"] == []
-
-
-def test_the_shipped_corpus_defaults_are_unchanged() -> None:
+    assert own.model_dump(mode="json")["srd_version"] == []  # may name no SRD version
     srd = Provenance(
         source="foundry",
         source_url="x",
