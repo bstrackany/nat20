@@ -102,6 +102,11 @@ caster takes. Requires the matching `dnd5e-srd-data`.
 
 ### Changed
 
+- **A Sphere or Cylinder spell can burst on a space.** A `cast_spell` naming
+  `target_zone_id` centres its Sphere or Cylinder there (SRD 5.2 Fireball, "a
+  point you choose within range") instead of on the caster when no creature
+  is named; a space out of range or out of sight is refused `out_of_range`
+  before the slot is spent.
 - **An effect that ships both `rounds` and `seconds` lasts the longer of the
   two.** Foundry packs carry a tracker `rounds` beside the real `seconds`
   (Longstrider: `rounds: 1, seconds: 3600`); the round tick ended such a

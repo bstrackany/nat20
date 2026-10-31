@@ -110,8 +110,10 @@ Dragonborn's Breath Weapon, the Pipes of Haunting. (An attack roll is never an
 area: it targets one creature.) Nor is a `use_item` that resolves several of
 an item's activities at once because no `activity_id` names one and none is
 charged. The engine places the template at its SRD 5.2 point of origin — the
-named target's cell for a Sphere or Cylinder, else the
-actor's; the actor's own cell for an Emanation, Cone, Cube or Line, whose
+space a `cast_spell` names in `target_zone_id` for a Sphere or Cylinder (a
+point the caster can see within the spell's range, else the cast is refused
+`out_of_range` before anything is spent), else the named target's cell, else
+the actor's; the actor's own cell for an Emanation, Cone, Cube or Line, whose
 origin is not part of the area — expands it, and keeps the cells with line of
 effect from that origin ("To block a line, an obstruction must provide Total
 Cover"). Aim a Cone, Cube or Line with `PlayerIntent.direction`; omit it and

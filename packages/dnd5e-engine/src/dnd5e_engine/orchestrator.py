@@ -6513,13 +6513,26 @@ def _aoe_direction(
 def _area_origin(
     live: _LiveCombat, actor_id: str, intent: PlayerIntent, template: AreaTemplate
 ) -> str:
-    """The area's SRD 5.2 point of origin: the named target's cell for a
-    Sphere or Cylinder (Fireball), else the actor's cell (Burning Hands,
-    Thunderwave, an Emanation)."""
+    """The area's SRD 5.2 point of origin: for a Sphere or Cylinder (Fireball)
+    the space a cast names, else the named target's cell; else the actor's cell
+    (Burning Hands, Thunderwave, an Emanation)."""
     actor_cell = live.actor_zone[actor_id]
+    if template.anchor == "target" and intent.target_zone_id and intent.intent_type == "cast_spell":
+        return intent.target_zone_id
     if template.anchor == "target" and intent.target_id:
         return live.actor_zone.get(intent.target_id, actor_cell)
     return actor_cell
+
+
+def _area_point(intent: PlayerIntent, activities: Sequence[Any]) -> str | None:
+    """The space a cast names as its Sphere or Cylinder's point of origin, or
+    ``None`` when the cast centres its area elsewhere (``_area_origin``)."""
+    if intent.intent_type != "cast_spell" or intent.target_zone_id is None:
+        return None
+    plan = _area_plan(intent, activities)
+    if plan is None or plan.template is None or not plan.places_template:
+        return None
+    return intent.target_zone_id if plan.template.anchor == "target" else None
 
 
 def _area_cover_origin(
@@ -10924,11 +10937,18 @@ def _spell_out_of_range(
     carry no metric distance and never gate. A construct placed in a named
     space is measured there instead (``_construct_cast_failure``): SRD 5.2
     Spiritual Weapon's force "appears within range", and its target need only
-    be "within 5 feet of the force"."""
+    be "within 5 feet of the force". A Sphere or Cylinder aimed at a space
+    is measured to that space: SRD 5.2 Fireball, "a point you choose within
+    range"."""
+    point = (
+        _area_point(intent, cast_spell_for_timing.activities)
+        if cast_spell_for_timing is not None
+        else None
+    )
     if not (
         intent.intent_type == "cast_spell"
         and cast_spell_for_timing is not None
-        and intent.target_id is not None
+        and (intent.target_id is not None or point is not None)
         and not (intent.target_zone_id is not None and cast_spell_for_timing.slug in CONSTRUCTS)
     ):
         return False
@@ -10941,7 +10961,7 @@ def _spell_out_of_range(
         range_ft = None
     if isinstance(range_ft, int) and range_ft > 0:
         caster_zone = live.actor_zone.get(actor_id)
-        target_zone = live.actor_zone.get(intent.target_id)
+        target_zone = point or live.actor_zone.get(intent.target_id or "")
         if (
             caster_zone is not None
             and target_zone is not None

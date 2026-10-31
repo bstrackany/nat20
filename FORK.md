@@ -5,7 +5,7 @@ branched from upstream `e187c81` (the 0.7.0 close-out, 2026-10-09). Every change
 on top of upstream, with tests, a `CHANGELOG.md` `[Unreleased]` entry in the package it touches
 and the relevant `docs/` page. Both package gates (`make check` in `packages/dnd5e-engine` and
 `packages/dnd5e-srd-data`) pass at every commit. The whole set is meant to go upstream as one
-PR, so what matters is the aggregate diff against `e187c81`: **74 files, +3,925 / −129** —
+PR, so what matters is the aggregate diff against `e187c81`: **80 files, +4,096 / −140** —
 about 1,900 lines of source (of which ~440 are comments and docstrings), 1,370 of tests, 430 of
 docs, 200 of canonical data.
 
@@ -43,6 +43,7 @@ gaps so that homebrew is a JSON/YAML file and a host can bring its own monster b
 | 12 | `d1d6720` trim: tests | The fork's tests cut from 1,969 to 1,315 lines: shared setup through upstream's `tests/c20_support.py` and a small `tests/fork_support.py`, parametrised tables for the SRD trigger sentences, AC floors and provenance, duplicates removed. Per-file coverage of our modules unchanged. | `tests/fork_support.py`; the fork's test files |
 | 13 | Color Spray blinds | The pinned Foundry effect was named Blinded and carried no status, so a failed save did nothing. `_EFFECT_STATUS_CORRECTIONS` (beside the change-corrections table) appends `blinded`; canonical patched; data CHANGELOG. | `tools/translators/foundry.py`; `canonical/spells/color-spray.json`; `tests/test_effect_change_corrections.py` |
 | 14 | Ranger's Hunter's Mark | Favored Enemy says "You always have the Hunter's Mark spell prepared", but Foundry's advancement omits the grant that Paladin's Smite, Druidic etc. carry. `_MISSING_GRANTS` in `tools/regen.py` appends it to the resolved grants; canonical patched; data CHANGELOG. | `tools/regen.py`; `canonical/classes/ranger.json`; `tests/test_class_feature_ownership.py` |
+| 15 | Sphere on a space | A `cast_spell`'s `target_zone_id` centres a Sphere or Cylinder there (Fireball "a point you choose within range"); before, with no single named creature the burst silently centred on the caster. A space out of range or sight is refused `out_of_range` before the slot is spent. | `orchestrator.py` `_area_point`, `_area_origin`, `_spell_out_of_range`; `tests/test_area_point.py`; `docs/concepts/grid.md` |
 
 `docs/capabilities.md` rows were amended in commits 2, 3, 5 and 10 ("Activities that fire later"
 ⚠️, "Reactions from data" ⚠️, custom trigger kinds ❌).
