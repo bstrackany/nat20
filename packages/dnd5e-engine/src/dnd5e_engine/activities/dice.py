@@ -26,6 +26,8 @@ from typing import TYPE_CHECKING
 
 import d20
 
+from dnd5e_engine.activities import explode
+
 if TYPE_CHECKING:
     from dnd5e_srd_data.schema.common import DamagePart, DamagePartBlock
 
@@ -87,7 +89,7 @@ def _parse(expr: str) -> d20.Expression:
     wire these rolls in catch the stdlib class, so wrap at the single parse site.
     """
     try:
-        return d20.parse(expr)
+        return explode.parse(expr)
     except d20.RollError as exc:
         raise ValueError(f"Unparseable dice expression: {expr!r}") from exc
 
@@ -119,6 +121,8 @@ def _eval_node(node: d20.ast.Node, rng: random.Random, die_floor: int | None = N
         # A floor (SRD 5.2 Great Weapon Fighting) changes faces, never the number
         # of draws, so the seeded stream is the same with or without it.
         return sum(faces if die_floor is None else (max(face, die_floor) for face in faces))
+    if isinstance(node, d20.ast.OperatedDice):
+        return explode.roll(node, rng, die_floor)
     if isinstance(node, d20.ast.UnOp):
         inner = _eval_node(node.value, rng, die_floor)
         if node.op == "+":

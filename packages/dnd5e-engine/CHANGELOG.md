@@ -113,6 +113,12 @@ caster takes. Requires the matching `dnd5e-srd-data`.
 
 ### Changed
 
+- **Foundry's exploding dice roll.** `activities/explode.py` reads `x`,
+  `x<cap>` and `x[<cap>]=<face>` in a damage formula: each die showing the
+  face adds another, which may explode too, up to the cap for the term.
+  Sorcerous Burst (`1d8x@mod=8`, SRD 5.2 "the maximum number of these d8s ...
+  equals your spellcasting ability modifier") no longer fails as an
+  unparseable dice expression after its attack roll.
 - **A Sphere or Cylinder spell can burst on a space.** A `cast_spell` naming
   `target_zone_id` centres its Sphere or Cylinder there (SRD 5.2 Fireball, "a
   point you choose within range") instead of on the caster when no creature
