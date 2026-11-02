@@ -7742,6 +7742,9 @@ def _build_pc_combatants(
                     if "weapon_proficiencies" in pc.model_fields_set
                     else None
                 ),
+                weapon_masteries=(
+                    list(pc.weapon_masteries) if pc.weapon_masteries is not None else None
+                ),
             )
         )
         actor_zone[pc.entity_id] = pc.zone_id
@@ -9812,6 +9815,22 @@ def _enchanted_weapon(
     if weapon is None:
         return None
     return enchant_weapon(weapon, live.active_effects.get(attacker.entity_id, ()))
+
+
+def _mastered_weapon(attacker: Combatant, weapon: Weapon | None) -> Weapon | None:
+    """SRD 5.2 §Weapon Mastery — "you can use the mastery properties of two
+    kinds of weapons of your choice". ``weapon`` without its mastery when the
+    attacker has a ``weapon_masteries`` list that does not name it; unchanged
+    otherwise, including for an attacker with no list (every mastery, the
+    behaviour before the field)."""
+    if (
+        weapon is None
+        or weapon.mastery is None
+        or attacker.weapon_masteries is None
+        or weapon.slug in attacker.weapon_masteries
+    ):
+        return weapon
+    return weapon.model_copy(update={"mastery": None})
 
 
 def _weapon_enchantment_to_hit(
@@ -13475,10 +13494,11 @@ async def submit_player_intent(
     # ``attacks_remaining`` spent, that gate's turn-keeping
     # ``AttackFailed(reason="no_action_economy")`` rejects it. The weapon is
     # fetched once, here, and the Loading gate below reuses it.
-    attack_weapon = (
+    attack_weapon = _mastered_weapon(
+        current,
         get_lib_loader().get_weapon(intent.weapon_id)
         if intent.intent_type == "attack" and intent.weapon_id
-        else None
+        else None,
     )
     funding = _classify_attack_funding(
         current,
@@ -13666,7 +13686,9 @@ async def submit_player_intent(
     )
     activities = resolved.activities
     cast_spell = resolved.cast_spell
-    fetched_weapon = _enchanted_weapon(live, current, resolved.fetched_weapon)
+    fetched_weapon = _mastered_weapon(
+        current, _enchanted_weapon(live, current, resolved.fetched_weapon)
+    )
     spellcasting_ability = resolved.spellcasting_ability
     feature_passive_effects = resolved.feature_passive_effects
 
@@ -14173,7 +14195,7 @@ def _resolve_opportunity_attack(live: _LiveCombat, reactor: Combatant, mover: Co
         )
         return
     targets = [mover]
-    weapon = _enchanted_weapon(live, reactor, attack.weapon)
+    weapon = _mastered_weapon(reactor, _enchanted_weapon(live, reactor, attack.weapon))
     # SRD Shield: "+5 bonus to AC, including against the triggering attack".
     _drain_targeted_reactions(
         live, trigger="hit_by_attack", triggering_actor_id=reactor.entity_id, targets=targets

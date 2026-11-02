@@ -217,6 +217,12 @@ class PartyMemberSpec(BaseModel):
     skill_proficiencies: tuple[str, ...] = ()
     skill_expertise: tuple[str, ...] = ()
     weapon_proficiencies: tuple[str, ...] = ()
+    # SRD 5.2 §Weapon Mastery: "you can use the mastery properties of two kinds
+    # of weapons of your choice". The weapon slugs whose mastery this PC can
+    # use. ``None`` (the default) uses every weapon's mastery, the behaviour
+    # before this field; a tuple, even an empty one, limits mastery to the
+    # weapons it lists. See ``orchestrator.py::_mastered_weapon``.
+    weapon_masteries: tuple[str, ...] | None = None
 
     @model_validator(mode="after")
     def _check_classes(self) -> PartyMemberSpec:

@@ -110,6 +110,10 @@ class Combatant(BaseModel):
     # explicitly, so it stays ``None`` -> always proficient, matching the SRD
     # "a monster is proficient with any weapon in its stat block" rule.
     weapon_proficiencies: list[str] | None = None  # categories + slugs; None = unset sentinel
+    # SRD 5.2 §Weapon Mastery — the weapon slugs whose mastery property this
+    # creature can use. ``None``: every weapon's (monsters, and a PC whose
+    # host never set ``PartyMemberSpec.weapon_masteries``).
+    weapon_masteries: list[str] | None = None
     death_saves: dict[str, Any] = Field(default_factory=dict)  # serialized DeathSaveState
     # SRD §Creatures — creature_type (e.g. "humanoid", "undead", "construct",
     # "elf"). Drives type-gated spell semantics (Hold Person targets only

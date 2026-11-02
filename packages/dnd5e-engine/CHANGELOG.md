@@ -16,6 +16,12 @@ caster takes. Requires the matching `dnd5e-srd-data`.
 
 ### Added
 
+- **`PartyMemberSpec.weapon_masteries`** — the weapon slugs whose mastery
+  property a character can use (SRD 5.2 Weapon Mastery: "the mastery
+  properties of two kinds of weapons of your choice"). Optional: unset (`None`)
+  keeps every weapon's mastery live, as before; a tuple, even an empty one,
+  limits mastery to the weapons it lists, on the character's own attacks and
+  opportunity attacks, Nick's off-hand economy included.
 - **`MonsterAI`** (`monster_ai.py`) — the decisions a driven monster turn
   makes, one method each (`is_fleeing`, `choose_target`, `rank_actions`,
   `choose_spell`, `aim`, `plan_move`), behind one object a host installs with
