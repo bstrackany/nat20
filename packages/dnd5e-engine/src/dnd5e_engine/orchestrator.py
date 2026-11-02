@@ -12251,6 +12251,8 @@ def _resolve_intent_activities(
             else feature_invocation.activities
         )
         feature_passive_effects = feature_invocation.passive_effects
+        # SRD 5.2 Channel Divinity: "the DC equals the spell save DC from this class's Spellcasting"
+        spellcasting_ability = _resolve_caster_spellcasting_ability(caster)
     return _ResolvedActivities(
         activities=activities,
         cast_spell=cast_spell,

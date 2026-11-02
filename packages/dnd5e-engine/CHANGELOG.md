@@ -119,6 +119,10 @@ caster takes. Requires the matching `dnd5e-srd-data`.
   Sorcerous Burst (`1d8x@mod=8`, SRD 5.2 "the maximum number of these d8s ...
   equals your spellcasting ability modifier") no longer fails as an
   unparseable dice expression after its attack roll.
+- **A feature's "spell save DC" reads its class's spellcasting ability.** A
+  `use_feature` whose save DC is `calculation: spellcasting` (Turn Undead,
+  Divine Spark, a Paladin's Channel Divinity) was refused for want of a
+  caster ability; it now takes the class's, as a `cast_spell` does.
 - **A Sphere or Cylinder spell can burst on a space.** A `cast_spell` naming
   `target_zone_id` centres its Sphere or Cylinder there (SRD 5.2 Fireball, "a
   point you choose within range") instead of on the caster when no creature
