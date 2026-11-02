@@ -163,3 +163,9 @@ def test_half_cover_raises_effective_ac_flipping_a_hit_to_a_miss():
 def test_absent_attacker_target_cover_entry_behaves_as_no_cover():
     rolled = _rolled_attack({"mon:someone_else": "total"}, target_ac=12)
     assert rolled.is_hit is True  # unaffected — the key doesn't match this target
+
+
+def test_attack_rolled_reports_the_ac_it_was_compared_against_and_the_cover():
+    rolled = _rolled_attack({"mon:foe": "three_quarters"}, target_ac=12)
+    assert (rolled.target_ac, rolled.cover) == (17, "three_quarters")
+    assert _rolled_attack({}, target_ac=12).cover == "none"

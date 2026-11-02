@@ -22,6 +22,11 @@ caster takes. Requires the matching `dnd5e-srd-data`.
   keeps every weapon's mastery live, as before; a tuple, even an empty one,
   limits mastery to the weapons it lists, on the character's own attacks and
   opportunity attacks, Nick's off-hand economy included.
+- **`AttackRolled.target_ac` and `AttackRolled.cover`** — the AC the attack
+  roll was compared against (the target's AC lifted to any effect floor, plus
+  cover, plus effect bonuses such as Shield) and the cover degree in it, so a
+  host can show why a roll missed. Additive: unset by callers that do not
+  resolve through `activities/attack.py`.
 - **`MonsterAI`** (`monster_ai.py`) — the decisions a driven monster turn
   makes, one method each (`is_fleeing`, `choose_target`, `rank_actions`,
   `choose_spell`, `aim`, `plan_move`), behind one object a host installs with

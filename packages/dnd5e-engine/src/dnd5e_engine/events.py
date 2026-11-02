@@ -291,6 +291,13 @@ class AttackRolled(BaseModel):
     # unchanged for backward compatibility.
     advantage_sources: list[AdvantageSource] = Field(default_factory=list)
     disadvantage_sources: list[AdvantageSource] = Field(default_factory=list)
+    # The AC this roll was compared against — the target's AC lifted to any
+    # effect floor, plus cover, plus effect bonuses (SRD Shield: "including
+    # against the triggering attack") — and the cover degree in it (SRD 5.2
+    # §Cover: +2 half, +5 three-quarters). Additive: ``None`` / ``"none"``
+    # from callers that do not set them.
+    target_ac: int | None = None
+    cover: Literal["none", "half", "three_quarters", "total"] = "none"
 
 
 class SaveRolled(BaseModel):

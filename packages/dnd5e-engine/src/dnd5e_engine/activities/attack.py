@@ -253,6 +253,8 @@ def resolve_attack(
                 sources=list(roll.sources),
                 advantage_sources=list(sources.advantage),
                 disadvantage_sources=list(sources.disadvantage),
+                target_ac=effective_ac,
+                cover=ctx.target_cover.get(target.entity_id, "none"),
             )
         )
 
@@ -398,6 +400,8 @@ def _resolve_cleave_chain(
             sources=list(roll.sources),
             advantage_sources=list(sources.advantage),
             disadvantage_sources=list(sources.disadvantage),
+            target_ac=effective_ac,
+            cover=ctx.target_cover.get(cid, "none"),
         )
     )
     ctx.mastery_procs.append(("cleave", cid))
