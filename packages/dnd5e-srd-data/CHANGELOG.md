@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Four more `ActivityTriggerKind`s and three narrowings.** `natural_1` (a
+  D20 Test's d20 shows 1), `casts_spell` (Blessed Healer: "Immediately after
+  you cast a spell with a spell slot"), `reduces_to_zero` and `enemy_falls`
+  (Dark One's Blessing: "When you reduce an enemy to 0 Hit Points or an enemy
+  within 10 feet of you is reduced to 0 Hit Points"). `ActivityTrigger.spell`
+  (a slug) and `.with_slot` narrow `casts_spell`; `.within_ft` narrows
+  `enemy_falls`. The three are left out of a dump when unset, so no canonical
+  file changed; no SRD entry is marked with the new kinds (Blessed Healer also
+  needs "restores Hit Points to others" and the slot level as a formula, Dark
+  One's Blessing both of its branches on one activity).
+
 - **`PassiveEffect.ends_on` and `PassiveEffect.until`** — what ends an applied
   effect besides its duration (midi-qol's DAE "special durations", which the
   pinned Foundry source does not carry): `ends_on` lists `EffectEndEvent`s

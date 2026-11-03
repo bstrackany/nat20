@@ -238,6 +238,7 @@ from dnd5e_engine.spellcasting import (
     resolve_target_count,
     spell_component_metadata,
 )
+from dnd5e_engine.trigger_moments import cast_matches, moments_of, subject_candidates
 from dnd5e_engine.triggers import (
     HeldUse,
     TriggerSource,
@@ -3338,6 +3339,11 @@ class _LiveCombat:
     # turn hooks and ``_fire_resolution_triggers``; dropped once no effect of
     # the use remains (``triggers.use_is_live``).
     held_uses: list[HeldUse] = field(default_factory=list)
+    # Event-log indexes ``_fire_moment_triggers`` has read (or that what it fired
+    # emitted) since the last turn end, so a nested resolution's events and the
+    # turn-end sweep never fire a ``natural_1`` / ``casts_spell`` /
+    # ``reduces_to_zero`` / ``enemy_falls`` moment twice.
+    moments_read: set[int] = field(default_factory=set)
     # A creature's own condition immunities, recorded the first time an effect
     # with ``system.traits.ci.value`` lands on it, so the granted ones can be
     # removed again when the effect ends (``_sync_condition_immunities``).
@@ -7151,6 +7157,9 @@ def _register_default_turn_hooks(live: _LiveCombat) -> None:
     hooks, after ``engine:timed-effect-expiry``, so a same-boundary repeat save
     (``engine:repeat-save``, registered first) still rolls against a live
     effect before the concentration cap can cascade its drop.
+    ``engine:moment-triggers-turn-end`` precedes it: the ending turn's natural
+    1s and falls no resolution read fire first, so the endings read what they
+    emit.
     ``engine:effect-endings-turn-end`` follows the timed expiry — after the
     repeat save, whose roll it reads for an ``ends_on: saves`` effect; its
     ``turn_start`` twin follows the reaction-effect expiry.
@@ -7186,6 +7195,9 @@ def _register_default_turn_hooks(live: _LiveCombat) -> None:
     live.lifecycle.register("turn_end", _hook_tick_durations, key="engine:duration-tick")
     live.lifecycle.register(
         "turn_end", _hook_expire_timed_effects, key="engine:timed-effect-expiry"
+    )
+    live.lifecycle.register(
+        "turn_end", _hook_fire_moment_triggers_at_turn_end, key="engine:moment-triggers-turn-end"
     )
     live.lifecycle.register(
         "turn_end", _hook_end_effects_at_turn_end, key="engine:effect-endings-turn-end"
@@ -11810,6 +11822,7 @@ def _hold_use(
         passive_effects=list(source.passive_effects),
         effects=effects,
         rounds_remaining=rounds,
+        held_at=len(live.event_log),
     )
     live.held_uses.append(use)
     return use
@@ -12076,7 +12089,78 @@ def _fire_resolution_triggers(live: _LiveCombat, actor: Combatant, pre_event_cou
                     _fire_triggered_activity(
                         live, use, activity, subject_id=ev.target_id, target_id=actor.entity_id
                     )
+    _fire_moment_triggers(live, pre_event_count, dealer_id=actor.entity_id)
     _expire_on_events(live, pre_event_count, dealer_id=actor.entity_id)
+
+
+def _fire_moment_triggers(
+    live: _LiveCombat, pre_event_count: int, *, dealer_id: str | None
+) -> None:
+    """Fire the held activities whose moment (``trigger_moments.moments_of``)
+    an event since ``pre_event_count`` is: a subject's natural 1 (``natural_1``),
+    its cast (``casts_spell``, narrowed by ``spell`` / ``with_slot``), its act
+    dropping an enemy to 0 HP (``reduces_to_zero``; ``dealer_id`` is the acting
+    creature) and an enemy dropping to 0 HP (``enemy_falls``, narrowed by
+    ``within_ft``). Each resolves against its subject. Reads every event not
+    read before (``live.moments_read``) — the activities a resolution's hits and
+    damage fired included, so Hex's extra damage that drops a creature counts;
+    what these fire is marked read and fires nothing further. An event from
+    before a use was held (its own cast) is not its moment. Called at the end
+    of ``_fire_resolution_triggers`` and over each ending turn. No RNG of its
+    own."""
+    end = len(live.event_log)
+    unread = [i for i in range(pre_event_count, end) if i not in live.moments_read]
+    live.moments_read.update(range(pre_event_count, end))
+    for index in unread:
+        ev = live.event_log[index]
+        for moment in moments_of(ev, dealer_id):
+            for use in _live_uses(live):
+                for activity in _waiting(use, moment.kind):
+                    trigger = trigger_of(activity)
+                    if trigger is None or index < use.held_at or not cast_matches(trigger, ev):
+                        continue
+                    subjects = (
+                        [moment.subject_id]
+                        if moment.subject_id is not None
+                        else subject_candidates(use, trigger, live.active_effects)
+                    )
+                    for subject_id in subjects:
+                        if not subjects_of(use, trigger, subject_id, live.active_effects) or (
+                            moment.fallen_id is not None
+                            and not _fall_counts_for(live, trigger, subject_id, moment.fallen_id)
+                        ):
+                            continue
+                        _fire_triggered_activity(
+                            live, use, activity, subject_id=subject_id, target_id=subject_id
+                        )
+    live.moments_read.update(range(end, len(live.event_log)))
+
+
+def _fall_counts_for(live: _LiveCombat, trigger: Any, subject_id: str, fallen_id: str) -> bool:
+    """A fall is ``subject_id``'s moment when the fallen creature is hostile to
+    it ("an enemy") and, under ``within_ft``, within that many feet of it — a
+    creature without a tracked position is not within any distance."""
+    if fallen_id == subject_id or not _is_enemy(live, subject_id, fallen_id):
+        return False
+    if trigger.within_ft is None:
+        return True
+    here = live.actor_zone.get(subject_id)
+    there = live.actor_zone.get(fallen_id)
+    distance = None if here is None or there is None else live.topology.distance_ft(here, there)
+    return distance is not None and distance <= trigger.within_ft
+
+
+def _hook_fire_moment_triggers_at_turn_end(live: _LiveCombat, actor_id: str | None) -> None:
+    """``turn_end`` hook — the moments of the ending turn no resolution read: a
+    natural 1 on the end-of-turn repeat save or a turn-start trigger's save, an
+    enemy an area's damage dropped at the turn's start (no creature reduced it,
+    so ``reduces_to_zero`` does not fire). Then the read marks are cleared: no
+    later read reaches back past this turn."""
+    if actor_id is None:
+        return
+    start = len(live.event_log) - len(_current_turn_events(live, actor_id))
+    _fire_moment_triggers(live, start, dealer_id=None)
+    live.moments_read.clear()
 
 
 def _apply_pre_slot_cast_gates(

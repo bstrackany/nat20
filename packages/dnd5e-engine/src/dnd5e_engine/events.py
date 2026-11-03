@@ -682,7 +682,17 @@ class ReactionTriggered(BaseModel):
 
 #: When an activity fires, when not with its parent's use —
 #: ``dnd5e_srd_data.schema.common.ActivityTriggerKind``.
-ActivityTriggerMoment = Literal["turn_start", "turn_end", "hits", "hit_by_attack", "takes_damage"]
+ActivityTriggerMoment = Literal[
+    "turn_start",
+    "turn_end",
+    "hits",
+    "hit_by_attack",
+    "takes_damage",
+    "natural_1",
+    "casts_spell",
+    "reduces_to_zero",
+    "enemy_falls",
+]
 
 
 class ActivityTriggered(BaseModel):

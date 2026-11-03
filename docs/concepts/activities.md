@@ -53,6 +53,10 @@ and the corpus marks such an activity with `Activity.trigger`:
 | `hits` | the subject's attack roll hits (`attack`: melee or ranged only; `against_bearer`: only a creature bearing an effect of the use) | the creature hit |
 | `hit_by_attack` | an attack roll hits the subject | the attacker |
 | `takes_damage` | the subject takes damage | the creature whose action dealt it |
+| `natural_1` | the d20 of the subject's D20 Test (attack roll, saving throw, ability check) shows 1 | the subject |
+| `casts_spell` | the subject casts a spell (`spell`: only that spell's slug; `with_slot`: only a cast with a spell slot, not a cantrip) | the subject |
+| `reduces_to_zero` | the subject's act drops a creature hostile to it to 0 Hit Points | the subject |
+| `enemy_falls` | a creature hostile to the subject drops to 0 Hit Points, by anyone's act (`within_ft`: only within that many feet of the subject) | the subject |
 | `later_use` | never by the engine: the cast does not resolve it (`also_at_cast`: it does) | — |
 
 The subject is each creature bearing an effect of the use (`subject: target`,
@@ -68,6 +72,18 @@ source, the activity, the moment and the creatures. `once` fires the activity
 a single time and then ends the use's effects on the subject (the lingering
 acid is spent); `ends_on_save` ends them on a creature whose save succeeds
 (Searing Smite: "On a successful save, the spell ends").
+
+The last four moments are read from what a resolution did — SRD 5.2 Blessed
+Healer's "Immediately after you cast a spell with a spell slot", Dark One's
+Blessing's "When you reduce an enemy to 0 Hit Points or an enemy within 10 feet
+of you is reduced to 0 Hit Points" — and over each ending turn, for the rolls
+and falls no resolution made (the end-of-turn repeat save, an area's damage at
+a turn's start; nobody reduced a creature an area dropped). "Drops to 0 Hit
+Points" is a character falling Unconscious or a creature dying of damage, not
+a third failed death save. Each event fires a moment once, and an event from
+before a use was held (the use's own cast) is not its moment. A hit's rider
+counts (Hex's extra damage that drops the creature is the caster reducing it);
+what an activity fired on one of these four moments emits fires none of them.
 
 A `later_use` activity (Sunbeam's new line, Haste's lethargy) only keeps the
 cast from resolving it; re-firing one is not supported, and a `cast_spell`

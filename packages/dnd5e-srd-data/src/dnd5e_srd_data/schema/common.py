@@ -190,6 +190,16 @@ class ActivityTriggerKind(StrEnum):
     HIT_BY_ATTACK = "hit_by_attack"  # Armor of Agathys — "a creature hits you with a melee attack"
     TAKES_DAMAGE = "takes_damage"  # "whenever the target takes damage"
     LATER_USE = "later_use"  # Sunbeam — "you can take a Magic action to create a new line"
+    # The d20 of the subject's D20 Test (attack roll, saving throw, ability
+    # check) shows 1 — the moment of Luck's "When you roll a 1 on the d20 of a
+    # D20 Test" (Luck itself rerolls, which no activity does)
+    NATURAL_1 = "natural_1"
+    # Blessed Healer — "Immediately after you cast a spell with a spell slot"
+    CASTS_SPELL = "casts_spell"
+    # Dark One's Blessing — "When you reduce an enemy to 0 Hit Points"
+    REDUCES_TO_ZERO = "reduces_to_zero"
+    # Dark One's Blessing — "an enemy within 10 feet of you is reduced to 0 Hit Points"
+    ENEMY_FALLS = "enemy_falls"
 
 
 class ActivityTriggerSubject(StrEnum):
@@ -220,8 +230,20 @@ class ActivityTrigger(BaseModel, frozen=True):
     repeats). ``once_per_turn`` fires the activity at most once in any one turn
     ("Once per turn, when you hit a creature with a weapon attack").
 
+    Four moments are read from what a resolution did, and the activity resolves
+    against the subject itself: ``natural_1`` (the subject's D20 Test shows a 1),
+    ``casts_spell`` (the subject casts a spell; ``spell`` narrows it to one
+    spell's slug, ``with_slot`` to a cast with a spell slot, not a cantrip),
+    ``reduces_to_zero`` (the subject's act drops a creature hostile to it to 0
+    Hit Points) and ``enemy_falls`` (a creature hostile to the subject drops to
+    0 Hit Points, by anyone's act; ``within_ft`` narrows it to one within that
+    many feet of the subject).
+
     A feature or feat a character has carries its triggers for the whole
     combat: the engine holds every such always-on activity from the start.
+
+    ``spell``, ``with_slot`` and ``within_ft`` are left out of a dump when
+    unset, so the corpus files only change where one is set.
     """
 
     kind: ActivityTriggerKind
@@ -232,6 +254,17 @@ class ActivityTrigger(BaseModel, frozen=True):
     once_per_turn: bool = False
     ends_on_save: bool = False
     also_at_cast: bool = False
+    spell: str = ""
+    with_slot: bool = False
+    within_ft: int | None = Field(default=None, gt=0)
+
+    @model_serializer(mode="wrap")
+    def _without_unset_narrowing(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        data: dict[str, Any] = handler(self)
+        for key in ("spell", "with_slot", "within_ft"):
+            if not data.get(key):
+                data.pop(key, None)
+        return data
 
 
 class ReactionCondition(BaseModel, frozen=True):

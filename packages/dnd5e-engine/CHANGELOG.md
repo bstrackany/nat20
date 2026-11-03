@@ -16,6 +16,21 @@ caster takes. Requires the matching `dnd5e-srd-data`.
 
 ### Added
 
+- **More moments a held activity fires on.** An activity whose
+  `Activity.trigger.kind` (`dnd5e-srd-data`, unreleased) is `natural_1` fires
+  when its subject's D20 Test shows a 1; `casts_spell` when the subject casts a
+  spell (narrowed by `spell` or `with_slot`); `reduces_to_zero` when the
+  subject's act drops an enemy to 0 HP (SRD 5.2 Dark One's Blessing: "When you
+  reduce an enemy to 0 Hit Points"); `enemy_falls` when an enemy drops to 0 HP
+  by anyone's act (narrowed by `within_ft`). Each resolves against its subject,
+  honours `once` / `once_per_turn` / `ends_on_save`, and reaches a feature's or
+  feat's always-on use. Read after each resolution (one line at the end of
+  `_fire_resolution_triggers`) and over each ending turn (new hook
+  `engine:moment-triggers-turn-end`, before `engine:effect-endings-turn-end`);
+  each event fires a moment once (`_LiveCombat.moments_read`), and an event
+  from before a use was held is not its moment (`HeldUse.held_at`). New module
+  `trigger_moments.py`; `ActivityTriggerMoment` gains the four values. Content
+  without these kinds is unchanged.
 - **Effects that end on an event or a turn boundary.** An effect whose corpus
   definition carries `PassiveEffect.ends_on` (`dnd5e-srd-data`, unreleased)
   ends after its bearer attacks, is attacked, saves, makes an ability check,

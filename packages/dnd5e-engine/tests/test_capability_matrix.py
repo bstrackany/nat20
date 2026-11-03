@@ -884,6 +884,7 @@ _PROBES: dict[str, tuple[Any, str]] = {
         lambda: (
             "def _fire_turn_triggers(" in _src("orchestrator.py")
             and "ActivityTriggerKind.HITS" in _src("orchestrator.py")
+            and "def _fire_moment_triggers(" in _src("orchestrator.py")
             and "creature_enters_area" not in _src("orchestrator.py")
         ),
         "⚠️",

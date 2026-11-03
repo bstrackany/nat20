@@ -79,6 +79,9 @@ class HeldUse:
     permanent: bool = False
     #: For ``once_per_turn``: the ``(round, actor)`` turn each activity last fired in.
     fired_turns: dict[str, tuple[int, str | None]] = field(default_factory=dict)
+    #: The event-log length when the use was held: an event before it (the
+    #: use's own cast) is no moment of the use's (``trigger_moments``).
+    held_at: int = 0
 
 
 def trigger_of(activity: Any) -> ActivityTrigger | None:

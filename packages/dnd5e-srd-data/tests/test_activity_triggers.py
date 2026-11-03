@@ -65,6 +65,27 @@ def test_a_trigger_names_a_known_moment() -> None:
         ActivityTrigger(kind="when_convenient")
     with pytest.raises(ValidationError):
         ActivityTrigger(kind="hits", attack="thrown")
+    with pytest.raises(ValidationError):
+        ActivityTrigger(kind="enemy_falls", within_ft=0)
+
+
+@pytest.mark.parametrize(
+    ("kind", "narrowing"),
+    [
+        ("natural_1", {}),
+        ("casts_spell", {"spell": "hunters-mark"}),
+        ("casts_spell", {"with_slot": True}),
+        ("reduces_to_zero", {}),
+        ("enemy_falls", {"within_ft": 10}),
+    ],
+)
+def test_a_moments_narrowing_dumps_only_when_set(kind: str, narrowing: dict[str, object]) -> None:
+    """``spell`` / ``with_slot`` / ``within_ft`` stay out of a dump when unset,
+    so the shipped triggers dump exactly as before (pinned above)."""
+    trigger = ActivityTrigger(kind=kind, subject="caster", **narrowing)  # type: ignore[arg-type]
+    dumped = trigger.model_dump(mode="json")
+    assert {k: dumped[k] for k in ("spell", "with_slot", "within_ft") if k in dumped} == narrowing
+    assert ActivityTrigger.model_validate(dumped) == trigger
 
 
 def _later(also_at_cast: bool = False) -> ActivityTrigger:
