@@ -67,7 +67,9 @@ when the data loads, and so are `fires`, `once_per_turn` or
 A cast, feature use or item use makes an area for each resolved activity that
 carries `area`. A placed area takes the cast's own point of origin and aim, the
 same ones its save used: `target_zone_id` for a Sphere or Cylinder, measured
-against the spell's range, and `direction` for a Cube. A feature or feat whose
+against the spell's range, and for a Cube `target_zone_id` (the face it starts
+from: Web, Grease, Entangle, Black Tentacles, also range-checked) and
+`direction`. A feature or feat whose
 area activity needs no activation (Aura of Protection) has its area from
 `start_combat` for the whole combat.
 

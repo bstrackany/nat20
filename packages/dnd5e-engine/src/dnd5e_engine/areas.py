@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from typing import Any, Final, Literal
 
 from dnd5e_engine.events import AreaShape
-from dnd5e_engine.spatial import GridTopology, SpatialTopology, parse_cell
+from dnd5e_engine.spatial import GridTopology, SpatialTopology, cell_id, parse_cell
 
 #: The shapes ``GridTopology.cells_in_template`` rasterises.
 GridShape = Literal["sphere", "cone", "line", "cube", "cylinder"]
@@ -112,10 +112,18 @@ def area_activity(activities: Sequence[Any]) -> Any | None:
     )
 
 
-def area_template(activity: Any) -> AreaTemplate | None:
+def area_template(activity: Any, *, ranged: bool = False) -> AreaTemplate | None:
     """The activity's template on the grid, or ``None`` when the engine can't
     place it: a ``wall``, or a size that isn't a positive number of feet
-    (Confusion's ``@item.level`` formula)."""
+    (Confusion's ``@item.level`` formula).
+
+    ``ranged``: the spell's range is a distance, so a Cube is placed from "a
+    point within range" (SRD 5.2 Web, Entangle, Faerie Fire): its point of
+    origin is the space the cast names, a face of the Cube, and it is still
+    aimed away from there. Without it a Cube comes out of the user's own space
+    (Thunderwave, range Self). Either way the point of origin is outside the
+    Cube. The activity can't tell the two apart: its own range is ``self`` when
+    it leaves the range to the spell."""
     template = activity.target.template
     mapped = _TEMPLATE_TYPES.get(template.type)
     try:
@@ -125,6 +133,8 @@ def area_template(activity: Any) -> AreaTemplate | None:
     if mapped is None or size_ft <= 0:
         return None
     shape, grid_shape, anchor, includes_origin = mapped
+    if ranged and grid_shape == "cube":
+        anchor = "target"
     return AreaTemplate(shape, grid_shape, size_ft, anchor, includes_origin)
 
 
@@ -243,7 +253,9 @@ def best_aim(
     The candidates, tried in a fixed order: an Emanation from ``actor_cell``;
     a Cone, Cube or Line from ``actor_cell`` in each of ``AIM_DIRECTIONS``; a
     Sphere or Cylinder centred on each of ``target_cells``, the cells of the
-    enemies the creature can see within range, which the caller picks. A tie
+    enemies the creature can see within range, which the caller picks; a Cube
+    placed at a point (``anchor`` ``"target"``) with each of them just inside
+    its near face, in each of ``AIM_DIRECTIONS``. A tie
     goes to the aim that affects fewer allies, then to the one whose enemies
     sit nearest its axis (a Cone, Cube or Line) or its point of origin (any
     other shape), then to the earlier candidate.
@@ -253,8 +265,12 @@ def best_aim(
     with no exclusions, so "each enemy", "of your choice" and "up to N"
     apply as they do for any other actor. ``is_ally`` is true for the
     creature itself."""
-    if template.anchor == "target":
-        candidates: list[tuple[str, tuple[int, int] | None]] = [(c, None) for c in target_cells]
+    if template.anchor == "target" and template.directional:
+        candidates: list[tuple[str, tuple[int, int] | None]] = [
+            (_behind(c, d), d) for c in target_cells for d in AIM_DIRECTIONS
+        ]
+    elif template.anchor == "target":
+        candidates = [(c, None) for c in target_cells]
     elif template.directional:
         candidates = [(actor_cell, d) for d in AIM_DIRECTIONS]
     else:
@@ -284,6 +300,13 @@ def best_aim(
         if best_score is None or score > best_score:
             best, best_score = AreaAim(origin, direction, selection), score
     return best
+
+
+def _behind(cell: str, direction: tuple[int, int]) -> str:
+    """The space one step back from ``cell`` against ``direction``: a Cube's
+    point of origin there puts ``cell`` just inside its near face."""
+    col, row = parse_cell(cell)
+    return cell_id(col - direction[0], row - direction[1])
 
 
 def _off_centre(origin: str, cell: str, direction: tuple[int, int] | None) -> int:

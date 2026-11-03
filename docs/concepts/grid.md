@@ -114,7 +114,11 @@ space a `cast_spell` names in `target_zone_id` for a Sphere or Cylinder (a
 point the caster can see within the spell's range, else the cast is refused
 `out_of_range` before anything is spent), else the named target's cell, else
 the actor's; the actor's own cell for an Emanation, Cone, Cube or Line, whose
-origin is not part of the area — expands it, and keeps the cells with line of
+origin is not part of the area. A Cube of a spell whose range is a distance
+(Web, Entangle, Faerie Fire: "from a point within range") starts instead at the
+space `target_zone_id` names, one face on it and the space itself outside,
+range-checked like a Sphere's point; with no space named it comes out of the
+actor's cell as before. The engine then expands the template and keeps the cells with line of
 effect from that origin ("To block a line, an obstruction must provide Total
 Cover"). Aim a Cone, Cube or Line with `PlayerIntent.direction`; omit it and
 the engine aims actor → named target. An area with neither is refused before
@@ -158,7 +162,9 @@ ends on, skipped and unspent if it then affects no enemy) and takes the
 placement that affects the most enemies minus allies,
 never itself: an Emanation from its cell; a Cone, Cube or Line in each of the
 eight directions (north first, then clockwise); a Sphere or Cylinder centred on
-each foe it can see within the action's or spell's range. The area then
+each foe it can see within the action's or spell's range; a ranged spell's
+Cube in each of the eight directions from the space just behind each such foe,
+so the foe is inside its near face. The area then
 affects every creature it catches there, a creature at 0 Hit Points included —
 only a choice or counted area spares the monster's own charmer — though the AI
 scores the placement itself only against enemies above 0 Hit Points. A tie

@@ -329,6 +329,16 @@ caster takes. Requires the matching `dnd5e-srd-data`.
 
 ### Fixed
 
+- **A Cube cast at a distance is placed at its point.** `areas.area_template`
+  (and `persistent_areas.template_of`) take `ranged`: a spell whose range is a
+  distance (`_reaches_a_point`) anchors its Cube on the space `target_zone_id`
+  names, still aimed by `direction`, so Web, Entangle, Grease, Black Tentacles
+  and Faerie Fire no longer come out of the caster's own space. Thunderwave
+  (range Self), and a ranged Cube cast with no space named, still do. That
+  space is range-checked like a Sphere's (`out_of_range` before the slot is
+  spent), and a monster casting such a spell aims the Cube with each foe in
+  range just inside its near face (`areas.best_aim`). The activity can't tell
+  them apart: its own range is `self` when it leaves the range to the spell.
 - An enemy an area's turn-end trigger drops to 0 HP now fires `enemy_falls`:
   `engine:area-triggers-turn-end` runs after the turn's moment sweep, so it
   reads the moments of its own firings.

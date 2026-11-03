@@ -121,8 +121,9 @@ def test_faerie_fire_gives_attacks_against_an_outlined_creature_advantage():
             ],
             seed=seed,
         )
-        # the goblins outline each other: the cube is aimed at mon:a's cell
-        cast(handle, "faerie-fire", target_zone_id=cell(2, 0), target_id="mon:a")
+        # the Cube's point of origin is the space before mon:a, aimed at it: both
+        # goblins are inside its near face
+        cast(handle, "faerie-fire", target_zone_id=cell(1, 0), target_id="mon:a")
         outlined = {e.effect.target_id for e in events(live, EffectApplied)}
         failed = {s.target_id for s in events(live, SaveRolled) if not s.succeeded}
         assert outlined == failed

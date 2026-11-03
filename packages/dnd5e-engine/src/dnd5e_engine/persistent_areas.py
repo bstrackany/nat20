@@ -156,13 +156,13 @@ def in_area(area: Area, occupied: Collection[str]) -> bool:
 
 
 def template_of(
-    activity: Any, roll_data: UsesRollData, slot_level: int | None
+    activity: Any, roll_data: UsesRollData, slot_level: int | None, *, ranged: bool = False
 ) -> AreaTemplate | None:
     """The activity's template on the grid, its size resolved for the user now:
     a number of feet, or a formula of the owner's numbers and the level it was
     cast at (Fog Cloud ``20 * @item.level``, Aura of Protection
     ``@scale.paladin.aura``). ``None`` when the size doesn't resolve or the
-    template has no grid shape."""
+    template has no grid shape. ``ranged`` as ``areas.area_template``."""
     size = str(activity.target.template.size or "").strip()
     if not size.isdigit():
         formula = size.replace(_ITEM_LEVEL, str(slot_level)) if slot_level is not None else size
@@ -173,7 +173,7 @@ def template_of(
         activity = activity.model_copy(
             update={"target": activity.target.model_copy(update={"template": template})}
         )
-    return area_template(activity)
+    return area_template(activity, ranged=ranged)
 
 
 def emanation_cells(

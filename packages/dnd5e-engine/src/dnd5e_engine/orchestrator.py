@@ -2391,18 +2391,21 @@ _MonsterPart = tuple[MonsterAction | None, Any]
 # and a legendary action.
 
 
-def _monster_area(activities: Sequence[Any]) -> tuple[Any, AreaTemplate] | None:
+def _monster_area(
+    activities: Sequence[Any], *, ranged: bool = False
+) -> tuple[Any, AreaTemplate] | None:
     """The area a monster's activities place, as its area activity and grid
     template; ``None`` when they resolve against the turn's one target: no
     templated save, damage or heal; an attack among them (an attack roll
     targets one creature); a template the grid can't place (a ``wall``, a
-    formula size); or "one creature" (a count of one keeps that one target)."""
+    formula size); or "one creature" (a count of one keeps that one target).
+    ``ranged``: a spell cast at a distance (``_reaches_a_point``)."""
     if any(a.kind == "attack" for a in activities):
         return None
     activity = area_activity(activities)
     if activity is None:
         return None
-    template = area_template(activity)
+    template = area_template(activity, ranged=ranged)
     if template is None or creature_count(activity) == 1:
         return None
     return activity, template
@@ -2522,7 +2525,7 @@ def _monster_area_unaimable(
     """True when ``activities`` place an area that affects no enemy from where
     ``monster`` stands, within ``spell``'s own range when it casts one (the
     range ``_resolve_monster_cast`` aims with), else the area activity's."""
-    area = _monster_area(activities)
+    area = _monster_area(activities, ranged=_reaches_a_point(spell))
     if area is None:
         return False
     activity, template = area
@@ -2961,7 +2964,7 @@ def _resolve_monster_cast(
     payload = _build_hydration_payload(live, caster=current)
     pre_event_count = len(live.event_log)
     _emit_spell_cast(live, current.entity_id, spell, slot_level)
-    area = _monster_area(spell.activities)
+    area = _monster_area(spell.activities, ranged=_reaches_a_point(spell))
     aim = None if area is None else monster_ai().aim(live, current, *area, _range_ft(spell.range))
     if area is not None and aim is not None:
         target_list = _place_monster_area(live, current, spell.slug, area[1], aim)
@@ -6588,8 +6591,19 @@ def _area_plan(intent: PlayerIntent, activities: Sequence[Any]) -> _AreaPlan | N
             named = tuple(intent.target_ids)
         elif count == 1 and intent.target_id:
             named = (intent.target_id,)
-    return _AreaPlan(
-        activity=activity, template=area_template(activity), count=count, named_ids=named
+    spell = get_lib_loader().get_spell(intent.spell_id or "") if intent.spell_id else None
+    template = area_template(
+        activity, ranged=intent.intent_type == "cast_spell" and _reaches_a_point(spell)
+    )
+    return _AreaPlan(activity=activity, template=template, count=count, named_ids=named)
+
+
+def _reaches_a_point(spell: Spell | None) -> bool:
+    """A spell whose range is a distance places its Cube "from a point within
+    range" (SRD 5.2 Web: 60 feet); one with a range of Self places it from the
+    caster (Thunderwave)."""
+    return (
+        spell is not None and spell.range.units == SpellRangeUnits.FEET and bool(spell.range.value)
     )
 
 
@@ -6613,12 +6627,14 @@ def _area_origin(
     live: _LiveCombat, actor_id: str, intent: PlayerIntent, template: AreaTemplate
 ) -> str:
     """The area's SRD 5.2 point of origin: for a Sphere or Cylinder (Fireball)
-    the space a cast names, else the named target's cell; else the actor's cell
-    (Burning Hands, Thunderwave, an Emanation)."""
+    the space a cast names, else the named target's cell; for a Cube cast at a
+    distance (Web) the space a cast names, else the actor's cell, the Cube aimed
+    at the named target; else the actor's cell (Burning Hands, Thunderwave, an
+    Emanation)."""
     actor_cell = live.actor_zone[actor_id]
     if template.anchor == "target" and intent.target_zone_id and intent.intent_type == "cast_spell":
         return intent.target_zone_id
-    if template.anchor == "target" and intent.target_id:
+    if template.anchor == "target" and intent.target_id and not template.directional:
         return live.actor_zone.get(intent.target_id, actor_cell)
     return actor_cell
 
@@ -12309,7 +12325,8 @@ def _make_areas_for_intent(
                 earlier.held_by = frozenset()
         held_by = frozenset({_hold_concentration_on_area(live, current, source)})
     for activity in with_area:
-        template = template_of(activity, roll_data, slot_level)
+        ranged = isinstance(source, Spell) and _reaches_a_point(source)
+        template = template_of(activity, roll_data, slot_level, ranged=ranged)
         if template is None:
             _LOGGER.warning("area_template_unsupported slug=%s", source.slug)
             continue
@@ -12371,13 +12388,16 @@ def _hold_concentration_on_area(
 
 def _placed_area_point(intent: PlayerIntent, spell: Spell | None) -> str | None:
     """The space a cast names as the point of origin of an area it leaves
-    behind (SRD 5.2 Fog Cloud: "centered on a point within range"), so the
-    range gate measures it; ``None`` otherwise."""
+    behind (SRD 5.2 Fog Cloud: "centered on a point within range"; Web, a Cube
+    "from a point within range"), so the range gate measures it; ``None``
+    otherwise."""
     if spell is None or intent.intent_type != "cast_spell" or intent.target_zone_id is None:
         return None
+    placed = _CENTRED_TEMPLATE_TYPES | (
+        _CUBE_TEMPLATE_TYPES if _reaches_a_point(spell) else frozenset()
+    )
     centred = any(
-        getattr(activity, "area", None) is not None
-        and activity.target.template.type in _CENTRED_TEMPLATE_TYPES
+        getattr(activity, "area", None) is not None and activity.target.template.type in placed
         for activity in spell.activities
     )
     return intent.target_zone_id if centred else None
@@ -12386,6 +12406,8 @@ def _placed_area_point(intent: PlayerIntent, spell: Spell | None) -> str | None:
 #: Foundry template types centred on a point (``areas``' Sphere and Cylinder),
 #: whose point a cast names with ``target_zone_id``.
 _CENTRED_TEMPLATE_TYPES: Final = frozenset({"sphere", "circle", "cylinder"})
+#: Foundry template types of a Cube, placed at a point by a spell cast at a distance.
+_CUBE_TEMPLATE_TYPES: Final = frozenset({"cube", "square"})
 
 
 def _silenced_cast_failure(
