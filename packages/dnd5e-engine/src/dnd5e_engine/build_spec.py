@@ -57,7 +57,12 @@ from dnd5e_engine.rules.character import (
     validate_increase_budget,
     weapon_proficiencies_from_changes,
 )
-from dnd5e_engine.rules.choices import MagicInitiatePick, ParsedChoices, parse_selected_choices
+from dnd5e_engine.rules.choices import (
+    FeatPick,
+    MagicInitiatePick,
+    ParsedChoices,
+    parse_selected_choices,
+)
 from dnd5e_engine.rules.dice import ability_modifier, proficiency_bonus
 from dnd5e_engine.rules.skills import SKILL_CODE_TO_SLUG, Skill, passive_perception
 from dnd5e_engine.spellcasting import (
@@ -576,6 +581,23 @@ def _ability_scores(
     return scores
 
 
+def _feats_taken_before(
+    pick: FeatPick, spec: CharacterBuildSpec, choices: ParsedChoices
+) -> set[str]:
+    """The feats the build took at Ability Score Improvements before ``pick``'s,
+    which count toward its prerequisites (SRD 5.2 Feats: "You must meet any
+    prerequisite specified in a feat to take that feat"; a feat taken at an
+    earlier level is one the character already has). A slot is earlier when the
+    highest character level it can have been reached at is lower: an earlier
+    level of the same class, or, across classes, an earlier character level.
+    The feat itself, or one in the same or a later slot, doesn't count."""
+
+    def taken_at(slot: FeatPick) -> int:
+        return spec.level - (spec.classes.get(slot.class_slug, 0) - slot.level)
+
+    return {other.feat_slug for other in choices.feats if taken_at(other) < taken_at(pick)}
+
+
 def _asi_level_feats(
     spec: CharacterBuildSpec,
     choices: ParsedChoices,
@@ -612,7 +634,9 @@ def _asi_level_feats(
                     f"feat:{pick.class_slug}:{pick.level} is taken at character level "
                     f"{taken_at} at most"
                 )
-            missing = sorted(set(prerequisite.feats) - owned)
+            missing = sorted(
+                set(prerequisite.feats) - owned - _feats_taken_before(pick, spec, choices)
+            )
             if missing:
                 raise ValueError(f"feat {feat.slug!r} needs {missing}")
         feats.append(feat.slug)

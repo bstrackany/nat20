@@ -97,7 +97,8 @@ matched to their base weapon. See `BACKLOG.md` for each.
 `derive_sheet` and `build_party_member` raise `ValueError` with the reason for:
 unknown slugs, a subclass below its level, malformed or repeated tokens,
 adjustments outside their options or budget, unreached or reused ASI levels,
-unmet feat prerequisites, a feat taken twice that isn't repeatable, an Epic
+unmet feat prerequisites (a feat taken at an earlier Ability Score Improvement
+meets one), a feat taken twice that isn't repeatable, an Epic
 Boon taken at an Ability Score Improvement below character level 19, Magic
 Initiate choices that don't fit the feat (more tokens than Magic Initiates, a
 repeated list or spell, a cantrip or a level 1 spell that isn't one), picks

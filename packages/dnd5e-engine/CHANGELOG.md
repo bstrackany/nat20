@@ -329,6 +329,13 @@ caster takes. Requires the matching `dnd5e-srd-data`.
 
 ### Fixed
 
+- **A feat taken at an earlier Ability Score Improvement meets a feat
+  prerequisite.** `derive_sheet` checked a `feat:` token's prerequisite feats
+  only against the build's features and origin feats, so Fey Pact at Fighter 4
+  didn't let Fey Sentinel be taken at Fighter 6. Feats from earlier slots now
+  count (new `build_spec._feats_taken_before`): an earlier level of the same
+  class, or, across classes, a slot reached by a lower character level. The
+  same slot, a later one, and the feat itself don't.
 - **A Cube cast at a distance is placed at its point.** `areas.area_template`
   (and `persistent_areas.template_of`) take `ranged`: a spell whose range is a
   distance (`_reaches_a_point`) anchors its Cube on the space `target_zone_id`

@@ -140,6 +140,54 @@ def test_a_multiclass_level_prerequisite_is_checked_against_the_level_taken() ->
         derive_sheet(spec, loader=_GrapplerNeedsLevel8())
 
 
+class _SavageAttackerNeedsGrappler(BundledAssetLoader):
+    """The bundled corpus, with Savage Attacker needing the Grappler feat (the SRD has no
+    feat whose prerequisite is another feat)."""
+
+    def get_feat(self, slug: str) -> Feat | None:
+        found = super().get_feat(slug)
+        if found is None or slug != "savage-attacker":
+            return found
+        return found.model_copy(update={"prerequisites": [FeatPrerequisite(feats=["grappler"])]})
+
+
+def _chain(classes: dict[str, int], *tokens: str) -> DerivedSheet:
+    spec = make_build_spec(
+        species_slug="dwarf",
+        classes=classes,
+        ability_scores={"strength": 13},
+        selected_choices=tokens,
+    )
+    return derive_sheet(spec, loader=_SavageAttackerNeedsGrappler())
+
+
+def test_a_feat_taken_at_an_earlier_ability_score_improvement_meets_a_feat_prerequisite() -> None:
+    sheet = _chain({"fighter": 8}, "feat:fighter:4:grappler", "feat:fighter:6:savage-attacker")
+    assert sheet.feats == ("grappler", "savage-attacker")
+    # Token order doesn't matter; the slot's level does.
+    sheet = _chain({"fighter": 8}, "feat:fighter:6:savage-attacker", "feat:fighter:4:grappler")
+    assert set(sheet.feats) == {"grappler", "savage-attacker"}
+    # Fighter 6/Rogue 4: Fighter 4 was reached by character level 8 at most,
+    # before Rogue 4's character level 10.
+    _chain({"fighter": 6, "rogue": 4}, "feat:fighter:4:grappler", "feat:rogue:4:savage-attacker")
+
+
+@pytest.mark.parametrize(
+    ("classes", "tokens"),
+    [
+        # The prerequisite taken at a later slot.
+        ({"fighter": 8}, ("feat:fighter:4:savage-attacker", "feat:fighter:6:grappler")),
+        # Fighter 4/Rogue 4: both slots are reached at character level 8 at most.
+        ({"fighter": 4, "rogue": 4}, ("feat:fighter:4:grappler", "feat:rogue:4:savage-attacker")),
+    ],
+)
+def test_a_feat_prerequisite_taken_at_the_same_or_a_later_slot_is_refused(
+    classes: dict[str, int], tokens: tuple[str, ...]
+) -> None:
+    with pytest.raises(ValueError, match=r"feat 'savage-attacker' needs \['grappler'\]"):
+        _chain(classes, *tokens)
+
+
 def test_a_fighting_style_taken_twice_is_refused() -> None:
     with pytest.raises(ValueError, match="feat 'defense' is not repeatable; the build takes it 2"):
         _sheet(level=4, selected_choices=("defense", "feat:fighter:4:defense"))
