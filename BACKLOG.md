@@ -1290,8 +1290,9 @@ zone + apply logic:
   DC); Web's "while in the webs" on a push out; Stinking Cloud's lost Action
   and Bonus Action; Spirit Guardians' halved Speed (no Speed read from an
   effect); Incendiary Cloud's chosen drift; Flaming Sphere (no template); one
-  area firing different activities at different moments (a homebrew gap); an
-  enemy an area drops at a turn's end is missed by `enemy_falls`.
+  area firing different activities at different moments (a homebrew gap). (An
+  enemy an area drops at a turn's end fires `enemy_falls` since 2026-11-03:
+  the area hook reads its own firings' moments.)
   (`packages/dnd5e-engine/src/dnd5e_engine/persistent_areas.py`,
   `packages/dnd5e-engine/src/dnd5e_engine/orchestrator.py::_fire_area`)
 - **Initiative has no "Delay" option.** C14 (2026-09-01) added the
@@ -1646,9 +1647,10 @@ cluster owns.
   always-on features when it is built (Nature's Ward), so Heroes' Feast
   (Frightened, Poisoned), Heroism (Frightened), Freedom of Movement
   (Paralyzed, Restrained), Mind Blank (Charmed), Calm Emotions (Charmed,
-  Frightened), Gaseous Form and Wind Walk (Prone), Mindless Rage while raging
-  (Charmed, Frightened) and the Periapt of Proof against Poison (Poisoned)
-  grant no immunity in combat. Nor does a spell a stat block casts before
+  Frightened), Gaseous Form and Wind Walk (Prone) and the Periapt of Proof
+  against Poison (Poisoned) grant no immunity in combat. (Mindless Rage's
+  Charmed and Frightened immunity holds while the Rage does since 2026-11-03,
+  `PassiveEffect.active_while`.) Nor does a spell a stat block casts before
   combat: the Archmage's Spellcasting lists "Mind Blank (cast before
   combat)", and its Charmed immunity comes only from that spell (amended
   2026-10-06, C28). The dying rules don't consult
@@ -1658,6 +1660,21 @@ cluster owns.
   (`packages/dnd5e-engine/src/dnd5e_engine/orchestrator.py::_fold_active_effect_changes`,
   `packages/dnd5e-engine/src/dnd5e_engine/activities/effects.py::is_condition_immune`,
   `packages/dnd5e-engine/src/dnd5e_engine/orchestrator.py::_emit_apply_healing`)
+- **Conditional always-on effects: what `active_while` leaves out
+  (2026-11-03).** A feature's or feat's always-on effect can count only while
+  its bearer has another effect, is Bloodied, or is not Incapacitated
+  (`docs/concepts/effects.md`). Left: an activity's trigger is not gated (a
+  "when you hit" rider "while your Rage is active", a homebrew gap; SRD 5.2
+  Frenzy has no trigger at all); worn armor, a held item (a spellbook, a
+  Finesse weapon), position (within 5 feet of an ally) and lighting have no
+  condition; Mindless Rage's "If you're Charmed or Frightened when you enter
+  your Rage, the condition ends on you" does not end it; a conditional
+  condition immunity re-syncs only when an effect lands on or leaves its
+  bearer, not when the bearer becomes Bloodied or Incapacitated (no case
+  needs that yet); a conditional effect's Speed, AC, Hit Point and sense
+  changes apply nowhere (the sheet leaves the effect out and combat reads
+  only its live keys: a homebrew "Fly Speed while raging" gap).
+  (`packages/dnd5e-engine/src/dnd5e_engine/conditional_passives.py`)
 - **Invisible's "Concealed" is not modelled (2026-10-06, C27).** SRD 5.2: "You
   aren't affected by any effect that requires its target to be seen unless
   the effect's creator can somehow see you." No spell or effect checks that

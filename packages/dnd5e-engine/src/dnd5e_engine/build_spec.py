@@ -394,7 +394,9 @@ def _subclass(
 def _always_on_changes(features: Sequence[str], loader: AssetLoader) -> list[PassiveEffectChange]:
     """Changes of every always-on passive effect (``transfer`` and not
     ``disabled``) on the character's features. An unresolved slug is logged and
-    skipped: a dataset gap must not block a sheet."""
+    skipped: a dataset gap must not block a sheet. An effect that counts only
+    ``active_while`` something holds is read live in combat instead
+    (``conditional_passives``), never folded into the sheet."""
     changes: list[PassiveEffectChange] = []
     for slug in features:
         feature = loader.get_feature(slug)
@@ -406,7 +408,7 @@ def _always_on_changes(features: Sequence[str], loader: AssetLoader) -> list[Pas
             )
             continue
         for passive in feature.passive_effects:
-            if passive.transfer and not passive.disabled:
+            if passive.transfer and not passive.disabled and passive.active_while is None:
                 changes.extend(passive.changes)
     return changes
 
@@ -420,7 +422,7 @@ def _always_on_feat_changes(feats: Sequence[str], loader: AssetLoader) -> list[P
         if feat is None:
             continue
         for passive in feat.passive_effects:
-            if passive.transfer and not passive.disabled:
+            if passive.transfer and not passive.disabled and passive.active_while is None:
                 changes.extend(passive.changes)
     return changes
 

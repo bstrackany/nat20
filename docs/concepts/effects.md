@@ -75,6 +75,33 @@ A monster's multiattack is one resolution, so all of its attacks see an effect
 that its first attack ends. A feature's or feat's always-on effect never
 carries an ending.
 
+### Effects that count only while something holds
+
+A feature's or feat's always-on effect may count only while something holds of
+its bearer. `PassiveEffect.active_while` (`ActiveWhile`) names it; every set
+field must hold:
+
+- `effect` — another effect is on the bearer, named by slug (matched against
+  the effect's name or id): SRD 5.2 Mindless Rage "You have Immunity to the
+  Charmed and Frightened conditions while your Rage is active" ships
+  `{"effect": "rage"}`. Homebrew writes `wild-shape`, `bladesong` the same way.
+- `bloodied` — SRD 5.2 Rules Glossary: "A creature is Bloodied while it has
+  half its Hit Points or fewer remaining."
+- `unless_incapacitated` — SRD 5.2 Danger Sense: "You have Advantage on
+  Dexterity saving throws unless you have the Incapacitated condition" (a
+  condition that implies Incapacitated counts).
+
+The effect is seeded at `start_combat` like any always-on effect (even when
+Foundry ships it `disabled` for a player to toggle, as Mindless Rage does), with
+`flags["active_while"]`; its resistances, immunities and condition immunities
+are seeded too, since the derived sheet leaves a conditional effect out.
+Nothing is added or removed when the condition changes: each time a creature's
+effects are read — the save, check, AC and damage-trait projection, an attack's
+effects in play, and the condition immunities whenever an effect lands on or
+leaves the creature — `conditional_passives.in_force` drops the ones whose
+condition does not hold. An activity's trigger is not gated, and there is no
+condition for worn armor, a held item, position or lighting (`BACKLOG.md`).
+
 ## Concentration anchors, enchantments and forms
 
 Every concentration spell concentrates. When a cast applies no concentration

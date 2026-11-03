@@ -1281,6 +1281,37 @@ class EffectEndEvent(StrEnum):
 EffectUntil = Literal["", "start_of_next_turn", "end_of_next_turn", "end_of_turn"]
 
 
+class ActiveWhile(BaseModel, frozen=True, extra="forbid"):
+    """What must hold of its bearer for an always-on effect to count, asked
+    each time the effect is read; every set field must hold.
+
+    ``effect`` — another effect is on the bearer, named by its slug (``rage``,
+    ``wild-shape``, ``bladesong``): SRD 5.2 Mindless Rage "You have Immunity to
+    the Charmed and Frightened conditions while your Rage is active".
+    ``bloodied`` — SRD 5.2 Rules Glossary: "A creature is Bloodied while it has
+    half its Hit Points or fewer remaining" (homebrew: resistances, immunities
+    and Advantage "while Bloodied"). ``unless_incapacitated`` — SRD 5.2 Danger
+    Sense: "You have Advantage on Dexterity saving throws unless you have the
+    Incapacitated condition". Unset fields are left out of a dump; at least one
+    is set, and an unknown field is refused.
+    """
+
+    effect: str = ""
+    bloodied: bool = False
+    unless_incapacitated: bool = False
+
+    @model_validator(mode="after")
+    def _something_to_hold(self) -> ActiveWhile:
+        if not (self.effect or self.bloodied or self.unless_incapacitated):
+            raise ValueError("active_while: set effect, bloodied or unless_incapacitated")
+        return self
+
+    @model_serializer(mode="wrap")
+    def _without_unset(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        data: dict[str, Any] = handler(self)
+        return {key: value for key, value in data.items() if value}
+
+
 class PassiveEffect(BaseModel):
     """A Foundry top-level ``effects[]`` entry. Drives passive ActiveEffect
     modifiers that the resolver applies while an item is worn/attuned (e.g.
@@ -1300,6 +1331,10 @@ class PassiveEffect(BaseModel):
     governs instead of ``duration``. Foundry has no field for either (the
     translator's table and a consumer's own data set them); both are left out of
     a dump when unset, so the corpus files only change where one is set.
+
+    ``active_while`` makes an always-on effect (a feature's or feat's) count
+    only while its bearer meets it (``ActiveWhile``: Mindless Rage "while your
+    Rage is active"); left out of a dump when unset.
     """
 
     id: str = Field(alias="_id", default="")
@@ -1312,6 +1347,7 @@ class PassiveEffect(BaseModel):
     transfer: bool = True
     ends_on: list[EffectEndEvent] = Field(default_factory=list)
     until: EffectUntil = ""
+    active_while: ActiveWhile | None = None
 
     model_config = {"populate_by_name": True}
 
@@ -1322,6 +1358,8 @@ class PassiveEffect(BaseModel):
             data.pop("ends_on", None)
         if not data.get("until"):
             data.pop("until", None)
+        if data.get("active_while") is None:
+            data.pop("active_while", None)
         return data
 
 

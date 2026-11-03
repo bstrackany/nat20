@@ -8,6 +8,9 @@
   "name": "Mindless Rage",
   "passive_effects": [
     {
+      "active_while": {
+        "effect": "rage"
+      },
       "changes": [
         {
           "key": "system.traits.ci.value",

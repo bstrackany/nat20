@@ -96,6 +96,7 @@ from dnd5e_srd_data import (
     WeaponProperty,
 )
 from dnd5e_srd_data.schema.common import (
+    ActiveWhile,
     ActivityTrigger,
     ActivityTriggerKind,
     ActivityTriggerSubject,
@@ -2556,6 +2557,32 @@ def _apply_effect_endings(slug: str, effects: list[PassiveEffect]) -> list[Passi
     return out
 
 
+#: ``(feature slug, effect _id)`` → what must hold of the bearer for the
+#: always-on effect to count (``PassiveEffect.active_while``). Foundry ships
+#: these effects disabled for the player to toggle (Mindless Rage) or always on
+#: (Danger Sense), so the SRD 5.2 sentence is the source.
+_ACTIVE_WHILE: dict[tuple[str, str], ActiveWhile] = {
+    # "You have Advantage on Dexterity saving throws unless you have the
+    # Incapacitated condition."
+    ("danger-sense", "lTOwmIJoE8GLm1oy"): ActiveWhile(unless_incapacitated=True),
+    # "You have Immunity to the Charmed and Frightened conditions while your
+    # Rage is active."
+    ("mindless-rage", "Y9LOXK6Q4vot2cxi"): ActiveWhile(effect="rage"),
+}
+
+
+def _apply_active_while(slug: str, effects: list[PassiveEffect]) -> list[PassiveEffect]:
+    """Set each effect's ``active_while`` from ``_ACTIVE_WHILE``. Copy-on-write
+    like ``_apply_effect_endings``."""
+    out: list[PassiveEffect] = []
+    for effect in effects:
+        active_while = _ACTIVE_WHILE.get((slug, effect.id))
+        if active_while is not None:
+            effect = effect.model_copy(update={"active_while": active_while})
+        out.append(effect)
+    return out
+
+
 #: ``(feature slug, activity _id)`` → the damage the reaction reduces before it
 #: lands (``Activity.damage_reduction``). Foundry writes these reductions as a
 #: heal after the fact (Deflect Attacks' Reduce, Stone's Endurance) or leaves
@@ -3679,7 +3706,9 @@ def translate_feature_yaml(
                 slug, _apply_damage_reductions(slug, _translate_activities(system))
             ),
         ),
-        passive_effects=_apply_feature_effect_value_corrections(slug, _passive_effects(doc)),
+        passive_effects=_apply_active_while(
+            slug, _apply_feature_effect_value_corrections(slug, _passive_effects(doc))
+        ),
         advancement=_advancement(system),
         uses=_feature_uses(system),
         provenance=_provenance(yaml_path, ingest_date, ingest_version),

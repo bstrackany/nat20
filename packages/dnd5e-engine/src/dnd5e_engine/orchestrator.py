@@ -148,6 +148,12 @@ from dnd5e_engine.areas import (
     is_harmful,
     select_affected,
 )
+from dnd5e_engine.conditional_passives import (
+    ACTIVE_WHILE_FLAG,
+    GATED_LIVE_KEYS,
+    gate_flags,
+    in_force,
+)
 from dnd5e_engine.death_saves import DeathSaveState, roll_death_save
 from dnd5e_engine.effect_endings import (
     UNTIL_END_OF_TURN_FLAG,
@@ -3851,7 +3857,9 @@ def _sync_condition_immunities(live: _LiveCombat, entity_id: str) -> None:
     if combatant is None:
         return
     own = live.base_condition_immunities.setdefault(entity_id, list(combatant.condition_immunities))
-    granted = _condition_immunities_from_effects(live.active_effects.get(entity_id, []))
+    granted = _condition_immunities_from_effects(
+        in_force(live.active_effects.get(entity_id, []), combatant)
+    )
     merged = [*own, *(g for g in granted if g not in own)]
     if merged != list(combatant.condition_immunities):
         _update_combatant(live, entity_id, condition_immunities=merged)
@@ -5597,6 +5605,7 @@ def _emit_apply_effect_applied(live: _LiveCombat, event: EffectApplied) -> None:
     live.active_effects.setdefault(applied.target_id, []).append(applied)
     if any(ch.key == _FOUNDRY_CONDITION_IMMUNITY_KEY for ch in applied.changes):
         _sync_condition_immunities(live, applied.target_id)
+    _sync_gated_immunities(live, applied.target_id)
     # One entry per (status, effect), the seed's key: an effect that lands a
     # condition the target already holds from another effect gets its own
     # entry, so losing either effect later (``_emit_apply_effect_expired`` /
@@ -5707,6 +5716,7 @@ def _emit_apply_effect_expired(live: _LiveCombat, event: EffectExpired) -> None:
         ch.key == _FOUNDRY_CONDITION_IMMUNITY_KEY for ch in expired_effect.changes
     ):
         _sync_condition_immunities(live, event.target_id)
+    _sync_gated_immunities(live, event.target_id)
     if expired_effect is not None and expired_effect.statuses:
         combatant = _find_combatant(live, event.target_id)
         remaining_effect_ids = {eff.id for eff in live.active_effects.get(event.target_id, [])}
@@ -6310,6 +6320,7 @@ def _project_target_modifiers(
 
     active = live.active_effects.get(c.entity_id, [])
     active = [*active, *_area_effects_on(live, c.entity_id)]
+    active = in_force(active, c)
     if active:
         per_target_dmg = passive_damage_modifiers.get(c.entity_id, dict(damage_proj))
         dmg_dirty = _fold_active_effect_changes(
@@ -8157,7 +8168,7 @@ def _seed_always_on(live: _LiveCombat, pc: Combatant) -> None:
     roll_data = _uses_roll_data(pc, _scale_values_of(pc))
     for kind, source in _always_on_sources(pc):
         for passive in source.passive_effects:
-            if not passive.transfer or passive.disabled:
+            if not passive.transfer or (passive.disabled and passive.active_while is None):
                 continue
             if passive.id in _always_on_area_effect_ids(source):
                 continue
@@ -8166,6 +8177,7 @@ def _seed_always_on(live: _LiveCombat, pc: Combatant) -> None:
                 for ch in passive.changes
                 if ch.key.startswith(_LIVE_ALWAYS_ON_KEY_PREFIXES)
                 or ch.key.endswith(_LIVE_ALWAYS_ON_KEY_SUFFIXES)
+                or (passive.active_while is not None and ch.key in GATED_LIVE_KEYS)
                 if (change := _passive_change_to_active_change(ch, roll_data, source.slug))
                 is not None
             ]
@@ -8178,7 +8190,7 @@ def _seed_always_on(live: _LiveCombat, pc: Combatant) -> None:
                     origin=f"{kind}:{source.slug}:{pc.entity_id}",
                     target_id=pc.entity_id,
                     changes=changes,
-                    flags={"always_on": True},
+                    flags={"always_on": True, **gate_flags(passive)},
                 )
             )
         waiting = [a for a in triggered_activities(source.activities) if not is_later_use(a)]
@@ -12621,9 +12633,13 @@ def _hook_area_triggers_turn_start(live: _LiveCombat, actor_id: str | None) -> N
 def _hook_area_triggers_turn_end(live: _LiveCombat, actor_id: str | None) -> None:
     """``turn_end`` hook — a creature ending its turn in an area (Moonbeam:
     "when it ... ends its turn there"). Runs before ``engine:areas-turn-end``
-    counts the areas' rounds down, so an area's last turn still fires."""
+    counts the areas' rounds down, so an area's last turn still fires. It runs
+    after ``engine:moment-triggers-turn-end``, so it reads its own firings'
+    moments (an enemy the area drops: ``enemy_falls``) itself."""
     if actor_id is not None and live.areas:
+        mark = len(live.event_log)
         _fire_areas_at(live, AreaTrigger.TURN_END, actor_id, _areas_holding(live, actor_id))
+        _fire_moment_triggers(live, mark, dealer_id=None)
 
 
 def _mark_area_created(live: _LiveCombat, area: Area) -> None:
@@ -14729,11 +14745,28 @@ def _effects_in_play(
     for c in (actor, *targets):
         if c.entity_id not in seen:
             seen.append(c.entity_id)
-    return tuple(
-        eff
-        for cid in seen
-        for eff in (*live.active_effects.get(cid, []), *_area_effects_on(live, cid))
-    )
+    return tuple(eff for cid in seen for eff in _effects_in_force(live, cid))
+
+
+def _effects_in_force(live: _LiveCombat, entity_id: str) -> list[ActiveEffect]:
+    """A creature's effects and the areas' effects on it, without an always-on
+    effect whose ``active_while`` does not hold now (``conditional_passives``)."""
+    effects = [*live.active_effects.get(entity_id, []), *_area_effects_on(live, entity_id)]
+    bearer = _find_combatant(live, entity_id)
+    return effects if bearer is None else in_force(effects, bearer)
+
+
+def _sync_gated_immunities(live: _LiveCombat, entity_id: str) -> None:
+    """An effect landing or ending may switch a conditional condition immunity
+    on or off (Mindless Rage: "Immunity to the Charmed and Frightened conditions
+    while your Rage is active"): re-sync the creature's immunities when it bears
+    one."""
+    if any(
+        ACTIVE_WHILE_FLAG in e.flags
+        and any(ch.key == _FOUNDRY_CONDITION_IMMUNITY_KEY for ch in e.changes)
+        for e in live.active_effects.get(entity_id, [])
+    ):
+        _sync_condition_immunities(live, entity_id)
 
 
 def _pc_attack_context_kwargs(

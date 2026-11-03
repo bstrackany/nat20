@@ -23,6 +23,7 @@ from dnd5e_srd_data.loader import AssetLoader, BundledAssetLoader, Category, Mem
 from dnd5e_srd_data.schema import (
     AbilityScores,
     ActivationBlock,
+    ActiveWhile,
     Activity,
     ActivityKind,
     ActivityTrigger,
@@ -169,6 +170,7 @@ from dnd5e_srd_data.schema import (
 __all__ = [
     "AbilityScores",
     "ActivationBlock",
+    "ActiveWhile",
     "Activity",
     "ActivityKind",
     "ActivityTrigger",

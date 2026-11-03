@@ -16,6 +16,16 @@ caster takes. Requires the matching `dnd5e-srd-data`.
 
 ### Added
 
+- **Always-on effects that count only while something holds.** A feature's or
+  feat's always-on effect whose data sets `PassiveEffect.active_while`
+  (`dnd5e-srd-data`, unreleased) counts only while its bearer has the named
+  effect (Mindless Rage: while raging), is Bloodied, or is not Incapacitated
+  (Danger Sense). New module `conditional_passives` (`in_force`), asked where
+  effects are read: the save/check/AC/damage-trait projection, `_effects_in_play`
+  and the condition-immunity sync, which also re-runs when an effect lands on or
+  leaves a creature bearing a conditional immunity. Such an effect is seeded
+  even when shipped `disabled`, its `dr` / `di` / `ci` changes are seeded too,
+  and `derive_sheet` leaves it out. No RNG.
 - **What an area does to the creatures in it (E2).** An area whose data names
   `PersistentArea.triggers` fires its activity (or the one `fires` names) at a
   creature, as the owner at the cast's level and save DC, through the held-use
@@ -291,6 +301,9 @@ caster takes. Requires the matching `dnd5e-srd-data`.
 
 ### Fixed
 
+- An enemy an area's turn-end trigger drops to 0 HP now fires `enemy_falls`:
+  `engine:area-triggers-turn-end` runs after the turn's moment sweep, so it
+  reads the moments of its own firings.
 - A cast resolves an area activity against nobody when the area does the work
   later (`persistent_areas.cast_reaches_nobody`): Web, Sleet Storm and Spike
   Growth no longer save or deal damage when cast, and a Silence no longer gives

@@ -13,6 +13,7 @@ from dnd5e_srd_data.schema.class_ import (
 from dnd5e_srd_data.schema.common import (
     # Activity field-block sub-models
     ActivationBlock,
+    ActiveWhile,
     # Activity discriminated union + per-kind classes
     Activity,
     ActivityKind,
@@ -151,6 +152,7 @@ from dnd5e_srd_data.schema.spell import (
 __all__ = [
     "AbilityScores",
     "ActivationBlock",
+    "ActiveWhile",
     "Activity",
     "ActivityKind",
     "ActivityTrigger",

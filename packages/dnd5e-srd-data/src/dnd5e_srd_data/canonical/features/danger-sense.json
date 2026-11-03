@@ -8,6 +8,9 @@
   "name": "Danger Sense",
   "passive_effects": [
     {
+      "active_while": {
+        "unless_incapacitated": true
+      },
       "changes": [
         {
           "key": "system.abilities.dex.save.roll.mode",

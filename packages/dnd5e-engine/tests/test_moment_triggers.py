@@ -28,7 +28,7 @@ from dnd5e_engine.events import (
     Unconscious,
 )
 from dnd5e_engine.lib_loader import set_lib_loader_for_tests
-from dnd5e_engine.orchestrator import _emit, _fire_moment_triggers, _LiveCombat
+from dnd5e_engine.orchestrator import _emit, _fire_moment_triggers, _LiveCombat, _update_combatant
 from dnd5e_engine.spatial import cell_id as cell
 from dnd5e_engine.trigger_moments import Moment, cast_matches, moments_of, subject_candidates
 from dnd5e_engine.triggers import HeldUse
@@ -283,3 +283,17 @@ def test_a_spells_moment_watches_the_bearer_of_its_effect():
     monster_turn(handle)
     cast(handle, "magic-missile", target_id=F, slot_level=1)
     assert _fired(live) == [("casts_spell", B, B)]
+
+
+def test_an_enemy_an_area_drops_at_its_turn_end_falls():
+    """Moonbeam: "when it ... ends its turn there". The area fires after the
+    turn's moment sweep, so it reads the fall it causes itself."""
+    _feat_with(ActivityTrigger(kind="enemy_falls", subject="caster"))
+    beam = caster(["moonbeam"], {2: 1}, feats=("omen",))
+    handle, live = start([beam], encounter=[goblin(hp_current=21, hp_max=21)], seed=1)
+    cast(handle, "moonbeam", target_zone_id="1,0", slot_level=2)
+    live.tracked_hp[F] = 1
+    _update_combatant(live, F, hp_current=1)
+    act(handle, F, intent_type="pass")
+    assert [d.target_id for d in events(live, Death)] == [F]
+    assert [f for f in _fired(live) if f[0] == "enemy_falls"] == [("enemy_falls", B, B)]

@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Conditional always-on effects.** `PassiveEffect.active_while`
+  (`ActiveWhile`: `effect` — another effect on the bearer, by slug; `bloodied`;
+  `unless_incapacitated`; every set field must hold), left out of a dump when
+  unset; an empty or unknown condition is refused. New export `ActiveWhile`.
+  Translator: `_ACTIVE_WHILE` marks Danger Sense (`unless_incapacitated`) and
+  Mindless Rage (`effect: rage`); both canonical files patched.
 - **Area triggers (E2).** `PersistentArea` gains `triggers` (`AreaTrigger`:
   `created` / `enters` / `turn_start` / `turn_end` / `moves_within` /
   `moved_onto`), `fires`, `once_per_turn`, `breaks_concentration`, `move_ft`

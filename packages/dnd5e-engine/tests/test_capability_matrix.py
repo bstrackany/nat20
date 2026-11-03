@@ -708,6 +708,15 @@ _PROBES: dict[str, tuple[Any, str]] = {
         ),
         "✅",
     ),
+    # Always-on effects gated live; activity triggers and equipment are not.
+    "Effects that count only while something holds": (
+        lambda: (
+            "def in_force(" in _src("conditional_passives.py")
+            and "in_force(active, c)" in _src("orchestrator.py")
+            and "active_while" not in _src("trigger_moments.py")
+        ),
+        "⚠️",
+    ),
     "Death saves, stabilization": (
         lambda: (
             "def roll_death_save(" in _src("death_saves.py")
