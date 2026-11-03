@@ -10,7 +10,7 @@ about 6,500 lines of source, 4,750 of tests, 620 of docs, 570 of canonical data.
 
 **Where it lives:** GitHub [bstrackany/nat20](https://github.com/bstrackany/nat20), branch
 `party-of-none`, which the local `main` tracks. The fork's GitHub `main` always mirrors upstream
-(a ruleset blocks pushes to it), so fork work never goes there. Rows 1–27 are pushed
+(a ruleset blocks pushes to it), so fork work never goes there. Rows 1–32 are pushed
 (2026-11-03); each later push waits for Ben's OK.
 
 **Rule:** nat20 is not our code. Any change here, however small, is discussed with and agreed
