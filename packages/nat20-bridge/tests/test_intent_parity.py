@@ -88,22 +88,27 @@ _CLERIC = {
 }
 
 
-def test_a_refused_intent_leaves_nothing_for_the_next_response(client: TestClient) -> None:
+def test_a_refused_intent_leaves_nothing_for_the_next_response(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
     cid = _start(client, _CLERIC, seed=5)  # seed 5: Ilse first
     url = f"/v1/combat/{cid}/intent"
-    # Divine Spark: Save queues its intent_submitted, then the engine raises.
-    save = client.post(
-        url,
-        json={
-            "actor_id": "char:ilse",
-            "intent_type": "use_feature",
-            "feature_id": "channel-divinity-cleric",
-            "activity_id": "OY9UrTXvlRL0JUoI",
-            "target_id": "mon:goblin-warrior-1",
-        },
+    real_submit = routes_combat.submit_player_intent
+
+    async def _queue_then_raise(handle: Any, actor_id: str, intent: PlayerIntent) -> None:
+        # Partway through a move the engine has queued events, then raises (a
+        # foe's opportunity attack it can't resolve, BACKLOG.md): 422.
+        monkeypatch.setattr(routes_combat, "submit_player_intent", real_submit)
+        await real_submit(handle, actor_id, intent)
+        raise ValueError("unresolvable opportunity attack")
+
+    monkeypatch.setattr(routes_combat, "submit_player_intent", _queue_then_raise)
+    move = client.post(
+        url, json={"actor_id": "char:ilse", "intent_type": "move", "direction": [1, 0]}
     )
-    assert save.status_code == 422
+    assert move.status_code == 422
     passed = client.post(url, json={"actor_id": "char:ilse", "intent_type": "pass"})
+    assert passed.status_code == 200, passed.text
     submitted = [e for e in passed.json()["events"] if e["type"] == "intent_submitted"]
     assert [(e["actor_id"], e["intent_type"]) for e in submitted] == [("char:ilse", "pass")]
 

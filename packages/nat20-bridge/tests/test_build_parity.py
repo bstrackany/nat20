@@ -27,6 +27,7 @@ _EVERY_KEYWORD: dict[str, Any] = {
     "ac_calc_mode": "default",
     "attuned_items": ("ring-of-protection",),
     "ability_score_method": "standard_array",
+    "feats": ("alert",),
 }
 
 

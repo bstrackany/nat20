@@ -141,20 +141,18 @@ def test_c29_a_feature_activity_is_picked_by_its_id(client: TestClient) -> None:
         target_id="char:ilse",
     )
     assert "healing_applied" in _types(heal)
-    # Divine Spark: Save needs a context the engine doesn't supply yet: the
-    # bridge answers 422, not 500.
+    # Divine Spark: Save takes its DC from the cleric's spellcasting ability.
     cid = _start(client, _CLERIC, seed=5)
-    resp = client.post(
-        f"/v1/combat/{cid}/intent",
-        json={
-            "actor_id": "char:ilse",
-            "intent_type": "use_feature",
-            "feature_id": "channel-divinity-cleric",
-            "activity_id": "OY9UrTXvlRL0JUoI",
-            "target_id": _GOBLIN,
-        },
+    save = _act(
+        client,
+        cid,
+        "char:ilse",
+        intent_type="use_feature",
+        feature_id="channel-divinity-cleric",
+        activity_id="OY9UrTXvlRL0JUoI",  # Divine Spark: Save
+        target_id=_GOBLIN,
     )
-    assert resp.status_code == 422
+    assert "save_rolled" in _types(save)
 
 
 def test_c29_cunning_action_dashes_as_a_bonus_action(client: TestClient) -> None:

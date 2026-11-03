@@ -81,6 +81,7 @@ class BuildRequest(BaseModel):
     ac_calc_mode: AcCalcMode | None = None
     attuned_items: tuple[str, ...] = ()
     ability_score_method: AbilityScoreMethod | None = None
+    feats: tuple[str, ...] = ()
 
     def to_build_spec(self) -> CharacterBuildSpec:
         """The engine's build spec. Raises ``ValueError`` for a build it refuses."""
