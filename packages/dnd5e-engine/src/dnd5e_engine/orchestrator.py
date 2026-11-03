@@ -145,6 +145,11 @@ from dnd5e_engine.areas import (
     select_affected,
 )
 from dnd5e_engine.death_saves import DeathSaveState, roll_death_save
+from dnd5e_engine.effect_endings import (
+    UNTIL_END_OF_TURN_FLAG,
+    UNTIL_START_OF_NEXT_TURN_FLAG,
+    effects_ended_by,
+)
 from dnd5e_engine.events import (
     Ability,
     ActivityTriggered,
@@ -7146,6 +7151,9 @@ def _register_default_turn_hooks(live: _LiveCombat) -> None:
     hooks, after ``engine:timed-effect-expiry``, so a same-boundary repeat save
     (``engine:repeat-save``, registered first) still rolls against a live
     effect before the concentration cap can cascade its drop.
+    ``engine:effect-endings-turn-end`` follows the timed expiry — after the
+    repeat save, whose roll it reads for an ``ends_on: saves`` effect; its
+    ``turn_start`` twin follows the reaction-effect expiry.
     ``engine:rage-extension`` (C20) is appended LAST among the ``turn_end``
     hooks: it reads only the ending turn's own events and Bonus-Action mark,
     and it runs after the ``rounds`` tick, so the corpus Rage's ``rounds: 10``
@@ -7180,12 +7188,18 @@ def _register_default_turn_hooks(live: _LiveCombat) -> None:
         "turn_end", _hook_expire_timed_effects, key="engine:timed-effect-expiry"
     )
     live.lifecycle.register(
+        "turn_end", _hook_end_effects_at_turn_end, key="engine:effect-endings-turn-end"
+    )
+    live.lifecycle.register(
         "turn_end", _hook_concentration_expiry, key="engine:concentration-expiry"
     )
     live.lifecycle.register("turn_end", _hook_expire_vex_grants, key="engine:vex-expiry")
     live.lifecycle.register("turn_end", _hook_rage_extension, key="engine:rage-extension")
     live.lifecycle.register(
         "turn_start", _hook_expire_reaction_effects, key="engine:reaction-effect-expiry"
+    )
+    live.lifecycle.register(
+        "turn_start", _hook_end_effects_at_turn_start, key="engine:effect-endings-turn-start"
     )
     live.lifecycle.register(
         "turn_start", _hook_rearm_standing_reactions, key="engine:standing-reactions"
@@ -7447,6 +7461,93 @@ def _expire_timed_effects_at_turn_end(live: _LiveCombat, actor_id: str) -> None:
                 reason="duration",
             ),
         )
+
+
+def _expire_on_events(
+    live: _LiveCombat, pre_event_count: int, *, dealer_id: str | None = None
+) -> None:
+    """End every effect whose ``flags["ends_on"]`` names an event since
+    ``pre_event_count`` (``PassiveEffect.ends_on``; SRD 5.2 Invisibility: "The
+    spell ends early immediately after the target makes an attack roll, deals
+    damage, or casts a spell"). Runs after the events, so an effect "until you
+    next hit" still counts for that hit and ends after its damage; an event
+    before the effect's own ``EffectApplied`` does not end it
+    (``effect_endings.is_ended``). ``dealer_id`` is the creature whose act dealt
+    the slice's damage. Called at the end of ``_fire_resolution_triggers`` and
+    over the whole ending turn at its end (saves and damage outside a
+    resolution). No RNG."""
+    if not any(eff.flags.get("ends_on") for effs in live.active_effects.values() for eff in effs):
+        return
+    events = live.event_log[pre_event_count:]
+    for identity in effects_ended_by(live.active_effects, events, dealer_id):
+        _end_effect_now(live, identity)
+
+
+def _end_effect_now(live: _LiveCombat, identity: tuple[str, str, str]) -> None:
+    """End one effect off its own clock: ``EffectExpired(reason="duration")``,
+    then the bookkeeping ``_end_use_effects_on`` does for a held use's effect —
+    ``ConditionRemoved`` for each condition paired to it, its repeat save
+    dropped, and the concentration chain that holds it pruned (Hypnotic
+    Pattern's "The spell ends for an affected creature if it takes any damage":
+    the caster keeps concentrating on the others)."""
+    bearer, effect_id, origin = identity
+    if not any(
+        eff.id == effect_id and eff.origin == origin for eff in live.active_effects.get(bearer, [])
+    ):
+        return
+    _emit(
+        live, EffectExpired(effect_id=effect_id, target_id=bearer, origin=origin, reason="duration")
+    )
+    for condition in live.conditions_by_effect.pop(identity, []):
+        _emit(live, ConditionRemoved(target_id=bearer, condition=condition))
+    live.repeat_save_on_turn_end.pop(identity, None)
+    for owner_id, chain in list(live.concentration_chain.items()):
+        if identity not in chain:
+            continue
+        survivors = [entry for entry in chain if entry != identity]
+        if survivors:
+            live.concentration_chain[owner_id] = survivors
+        else:
+            live.concentration_chain.pop(owner_id, None)
+            live.concentration_rounds_remaining.pop(owner_id, None)
+
+
+def _hook_end_effects_at_turn_start(live: _LiveCombat, actor_id: str | None) -> None:
+    """``turn_start`` hook — "until the start of your next turn" (SRD 5.2
+    Shield): ``flags["until_start_of_next_turn_of"] == actor_id`` ends now,
+    whether it was applied on that actor's own last turn or as its reaction on
+    another creature's. One applied since this turn began (an earlier
+    ``turn_start`` hook) waits for the next one."""
+    if actor_id is None:
+        return
+    ending = [
+        (bearer, eff.id, eff.origin)
+        for bearer, effects in live.active_effects.items()
+        for eff in effects
+        if eff.flags.get(UNTIL_START_OF_NEXT_TURN_FLAG) == actor_id
+        and not _effect_applied_during_current_turn(live, actor_id, (bearer, eff.id, eff.origin))
+    ]
+    for identity in ending:
+        _end_effect_now(live, identity)
+
+
+def _hook_end_effects_at_turn_end(live: _LiveCombat, actor_id: str | None) -> None:
+    """``turn_end`` hook — "until the end of the current turn" (SRD 5.2 Stinking
+    Cloud): every ``flags["until_end_of_turn"]`` effect ends with the turn it
+    was applied in, whoever's it is. Then ``_expire_on_events`` reads the whole
+    ending turn, for the events no resolution passed it (the end-of-turn repeat
+    save, a turn-start trigger's save or damage)."""
+    if actor_id is None:
+        return
+    ending = [
+        (bearer, eff.id, eff.origin)
+        for bearer, effects in live.active_effects.items()
+        for eff in effects
+        if eff.flags.get(UNTIL_END_OF_TURN_FLAG)
+    ]
+    for identity in ending:
+        _end_effect_now(live, identity)
+    _expire_on_events(live, len(live.event_log) - len(_current_turn_events(live, actor_id)))
 
 
 def _run_end_of_turn_saves(live: _LiveCombat, actor_id: str) -> None:
@@ -11975,6 +12076,7 @@ def _fire_resolution_triggers(live: _LiveCombat, actor: Combatant, pre_event_cou
                     _fire_triggered_activity(
                         live, use, activity, subject_id=ev.target_id, target_id=actor.entity_id
                     )
+    _expire_on_events(live, pre_event_count, dealer_id=actor.entity_id)
 
 
 def _apply_pre_slot_cast_gates(

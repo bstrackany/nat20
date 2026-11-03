@@ -44,6 +44,37 @@ Concentration-flagged effects are exempt from all of the above — the
 concentration cascade and the per-turn repeat save own their lifetime, and the
 imported packs carry display-only counters on them.
 
+### Effects that end on an event or a turn boundary
+
+A corpus effect may also say what ends it (midi-qol's DAE "special durations"),
+and the effect carries it into combat as flags:
+
+- `PassiveEffect.ends_on` → `flags["ends_on"]`: the effect ends after the first
+  of these that happens to its bearer — `attacks` (makes an attack roll),
+  `is_attacked` (an attack roll is made against it), `saves` (a saving throw,
+  the concentration check included), `checks` (an ability check),
+  `takes_damage`, `deals_damage`, `zero_hp` (drops to 0 Hit Points) and
+  `casts_spell`. SRD 5.2 Invisibility ships `attacks`, `deals_damage` and
+  `casts_spell`; Hypnotic Pattern ships `takes_damage`.
+- `PassiveEffect.until` → a turn boundary, which then replaces the timed
+  `duration`: `start_of_next_turn` (`flags["until_start_of_next_turn_of"]`,
+  ends as the applying creature's next turn starts — Shield), `end_of_next_turn`
+  (the `until_end_of_next_turn_of` flag above — Guiding Bolt) and `end_of_turn`
+  (`flags["until_end_of_turn"]`, ends with the turn under way when it landed —
+  Stinking Cloud).
+
+The engine reads the typed events after each resolution (the end of
+`_fire_resolution_triggers`) and over the whole turn at its end, for a save or
+damage no resolution passed it. Only events after the effect's own
+`EffectApplied` count, so an effect a resolution grants is not ended by that
+resolution's own roll, and one "until you next attack" counts for that attack
+and ends after its damage. Each ending emits `EffectExpired(reason="duration")`,
+then `ConditionRemoved` for each condition paired to the effect, and prunes it
+from its caster's concentration (the caster keeps concentrating on the others).
+A monster's multiattack is one resolution, so all of its attacks see an effect
+that its first attack ends. A feature's or feat's always-on effect never
+carries an ending.
+
 ## Concentration anchors, enchantments and forms
 
 Every concentration spell concentrates. When a cast applies no concentration

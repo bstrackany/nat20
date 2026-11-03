@@ -302,6 +302,9 @@ def test_hooks_registered_by_the_engine_are_present_and_ordered():
       per-attacker mastery-grant counters with no cross-hook ordering
       dependency, so it only needs to run once per turn end, after the
       others.
+    * ``engine:effect-endings-turn-end`` follows the timed expiry (and the
+      repeat save, whose roll it reads for ``ends_on: saves``); its
+      ``turn_start`` twin follows the reaction-effect expiry;
     * ``engine:rage-extension`` (C20, SRD 5.2 Rage) is appended LAST — it reads
       only the ending turn's own events and the Bonus-Action mark, and follows
       the round tick so the corpus Rage's ``rounds`` stays the outer cap.
@@ -316,6 +319,7 @@ def test_hooks_registered_by_the_engine_are_present_and_ordered():
         "round_start": [],
         "turn_start": [
             "engine:reaction-effect-expiry",
+            "engine:effect-endings-turn-start",
             "engine:standing-reactions",
             "engine:activity-triggers-turn-start",
         ],
@@ -324,6 +328,7 @@ def test_hooks_registered_by_the_engine_are_present_and_ordered():
             "engine:repeat-save",
             "engine:duration-tick",
             "engine:timed-effect-expiry",
+            "engine:effect-endings-turn-end",
             "engine:concentration-expiry",
             "engine:vex-expiry",
             "engine:rage-extension",

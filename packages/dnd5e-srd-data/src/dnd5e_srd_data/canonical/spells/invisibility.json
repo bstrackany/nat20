@@ -127,6 +127,11 @@
       "duration": {
         "seconds": 3600
       },
+      "ends_on": [
+        "attacks",
+        "deals_damage",
+        "casts_spell"
+      ],
       "id": "9svfDetqjhsFP3ey",
       "name": "Invisible",
       "statuses": [

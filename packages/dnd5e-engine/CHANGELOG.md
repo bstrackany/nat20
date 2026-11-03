@@ -16,6 +16,19 @@ caster takes. Requires the matching `dnd5e-srd-data`.
 
 ### Added
 
+- **Effects that end on an event or a turn boundary.** An effect whose corpus
+  definition carries `PassiveEffect.ends_on` (`dnd5e-srd-data`, unreleased)
+  ends after its bearer attacks, is attacked, saves, makes an ability check,
+  takes or deals damage, drops to 0 HP or casts a spell — SRD 5.2 Invisibility
+  "ends early immediately after the target makes an attack roll, deals damage,
+  or casts a spell". `PassiveEffect.until` ends it at the start or end of the
+  applying creature's next turn, or at the end of the current turn, and
+  replaces the timed duration. Carried as `ActiveEffect.flags` (`ends_on`,
+  `until_start_of_next_turn_of`, the existing `until_end_of_next_turn_of`,
+  `until_end_of_turn`); new module `effect_endings.py`; two turn hooks
+  (`engine:effect-endings-turn-start` / `-turn-end`); each ending emits
+  `EffectExpired(reason="duration")`. Effects without either field are
+  unchanged.
 - **`PartyMemberSpec.weapon_masteries`** — the weapon slugs whose mastery
   property a character can use (SRD 5.2 Weapon Mastery: "the mastery
   properties of two kinds of weapons of your choice"). Optional: unset (`None`)

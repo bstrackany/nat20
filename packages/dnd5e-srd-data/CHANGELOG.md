@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`PassiveEffect.ends_on` and `PassiveEffect.until`** — what ends an applied
+  effect besides its duration (midi-qol's DAE "special durations", which the
+  pinned Foundry source does not carry): `ends_on` lists `EffectEndEvent`s
+  (`attacks`, `is_attacked`, `saves`, `checks`, `takes_damage`, `deals_damage`,
+  `zero_hp`, `casts_spell`), `until` a turn boundary (`start_of_next_turn`,
+  `end_of_next_turn`, `end_of_turn`). Both are left out of a dump when unset, so
+  only the two spells below changed. The translator sets `ends_on` from
+  `_EFFECT_ENDINGS`: Invisibility's Invisible ends when its bearer attacks,
+  deals damage or casts a spell; Hypnotic Pattern's Hypnotized when it takes
+  damage. Canonical `invisibility.json` and `hypnotic-pattern.json` patched.
+
 - **The Ranger is granted Hunter's Mark at level 1.** Favored Enemy says "You
   always have the Hunter's Mark spell prepared", but Foundry's advancement omits
   the grant; regen appends it from `_MISSING_GRANTS`, so the class carries a

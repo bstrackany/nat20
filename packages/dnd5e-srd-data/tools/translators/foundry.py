@@ -38,6 +38,7 @@ from dnd5e_srd_data import (
     DamageActivity,
     DamagePart,
     DamagePartBlock,
+    EffectEndEvent,
     EnchantActivity,
     Feat,
     FeatCategory,
@@ -2431,6 +2432,34 @@ def _apply_effect_status_corrections(
     return out
 
 
+#: ``(spell slug, effect _id)`` → the events that end the effect on its bearer
+#: (``PassiveEffect.ends_on``), which the pinned Foundry source leaves to a module
+#: (DAE's special durations) and so does not carry.
+_EFFECT_ENDINGS: dict[tuple[str, str], list[EffectEndEvent]] = {
+    # "The spell ends early immediately after the target makes an attack roll,
+    # deals damage, or casts a spell."
+    ("invisibility", "9svfDetqjhsFP3ey"): [
+        EffectEndEvent.ATTACKS,
+        EffectEndEvent.DEALS_DAMAGE,
+        EffectEndEvent.CASTS_SPELL,
+    ],
+    # "The spell ends for an affected creature if it takes any damage"
+    ("hypnotic-pattern", "mjAs8ssQlgp0AQOp"): [EffectEndEvent.TAKES_DAMAGE],
+}
+
+
+def _apply_effect_endings(slug: str, effects: list[PassiveEffect]) -> list[PassiveEffect]:
+    """Set each effect's ``ends_on`` from ``_EFFECT_ENDINGS``. Copy-on-write
+    like ``_apply_effect_status_corrections``."""
+    out: list[PassiveEffect] = []
+    for effect in effects:
+        ends_on = _EFFECT_ENDINGS.get((slug, effect.id))
+        if ends_on:
+            effect = effect.model_copy(update={"ends_on": list(ends_on)})
+        out.append(effect)
+    return out
+
+
 def _apply_activity_triggers(slug: str, activities: list[Activity]) -> list[Activity]:
     """Set each activity's ``trigger`` from ``_ACTIVITY_TRIGGERS``. Copy-on-write
     like ``_apply_spell_damage_type_corrections``."""
@@ -2516,8 +2545,11 @@ def translate_spell_yaml(
                 ),
             ),
         ),
-        passive_effects=_apply_effect_status_corrections(
-            slug, _apply_effect_change_corrections(slug, _passive_effects(doc))
+        passive_effects=_apply_effect_endings(
+            slug,
+            _apply_effect_status_corrections(
+                slug, _apply_effect_change_corrections(slug, _passive_effects(doc))
+            ),
         ),
         provenance=_provenance(yaml_path, ingest_date, ingest_version),
         review=ReviewState(),

@@ -702,6 +702,13 @@ _PROBES: dict[str, tuple[Any, str]] = {
         ),
         "✅",
     ),
+    "Effects that end on an event or a turn boundary": (
+        lambda: (
+            'key="engine:effect-endings-turn-start"' in _src("orchestrator.py")
+            and "_expire_on_events(live, pre_event_count" in _src("orchestrator.py")
+        ),
+        "✅",
+    ),
     "Death saves, stabilization": (
         lambda: (
             "def roll_death_save(" in _src("death_saves.py")

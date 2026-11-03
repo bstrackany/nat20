@@ -24,6 +24,7 @@ from collections.abc import Iterable, Mapping
 from typing import TYPE_CHECKING, Any, get_args
 
 from dnd5e_engine.activities.formula import resolve_roll_data
+from dnd5e_engine.effect_endings import ending_flags, timed_duration
 from dnd5e_engine.events import ConditionApplied, ConditionType, EffectApplied
 from dnd5e_engine.rules.conditions import granted_condition_immunities
 from dnd5e_engine.types.combat import Combatant
@@ -176,8 +177,11 @@ def passive_effect_to_active_effect(
 
     ``id``/``origin`` follow the ieffect2 slug conventions so the orchestrator
     can parse them back. ``flags`` carries ``{"concentration": True}``
-    only when the caster's cast is concentration-gated, then ``extra_flags``
-    (an allowlisted conjuration's keys, e.g. the enchanted weapon's slug).
+    only when the caster's cast is concentration-gated, then the effect's
+    ending (``effect_endings.ending_flags``: ``ends_on`` / ``until``, keyed to
+    ``caster_id``; an ``until`` replaces the timed duration), then
+    ``extra_flags`` (an allowlisted conjuration's keys, e.g. the enchanted
+    weapon's slug).
 
     ``ctx`` (when supplied) resolves level-scaled roll-data tokens in each
     change value at apply-time (Rage's ``@scale.barbarian.rage-damage`` → the
@@ -190,10 +194,14 @@ def passive_effect_to_active_effect(
         target_id=target_id,
         disabled=pe.disabled,
         transfer=pe.transfer,
-        duration=_duration_from_passive(pe.duration),
+        duration=_duration_from_passive(timed_duration(pe)),
         changes=[_passive_change_to_active(ch, ctx) for ch in pe.changes],
         statuses=set(pe.statuses),
-        flags={**({"concentration": True} if concentration else {}), **(extra_flags or {})},
+        flags={
+            **({"concentration": True} if concentration else {}),
+            **ending_flags(pe, caster_id),
+            **(extra_flags or {}),
+        },
     )
 
 

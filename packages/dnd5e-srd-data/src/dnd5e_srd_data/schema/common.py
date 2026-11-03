@@ -874,6 +874,35 @@ class PassiveEffectChange(BaseModel, frozen=True):
     priority: int | None = None
 
 
+class EffectEndEvent(StrEnum):
+    """Something the creature bearing an effect does, or has done to it, that
+    ends the effect (midi-qol's DAE "special durations"). SRD 5.2 writes these
+    into the text: Invisibility "ends early immediately after the target makes
+    an attack roll, deals damage, or casts a spell"; Hypnotic Pattern "ends for
+    an affected creature if it takes any damage"."""
+
+    # Invisibility — "makes an attack roll, deals damage, or casts a spell"
+    ATTACKS = "attacks"
+    # Guiding Bolt — "the next attack roll made against it … has Advantage"
+    IS_ATTACKED = "is_attacked"
+    # Improved Brutal Strike — "Disadvantage on the next saving throw it makes"
+    SAVES = "saves"
+    CHECKS = "checks"  # an ability check the bearer makes
+    TAKES_DAMAGE = "takes_damage"
+    DEALS_DAMAGE = "deals_damage"
+    # Gaseous Form — "The spell ends on the target if it drops to 0 Hit Points"
+    ZERO_HP = "zero_hp"
+    CASTS_SPELL = "casts_spell"
+
+
+#: When an effect ends on a turn boundary instead of after a timed duration.
+#: "start_of_next_turn" / "end_of_next_turn" are the next turn of the creature
+#: that applied it — Shield: "Until the start of your next turn"; Guiding Bolt:
+#: "before the end of your next turn". "end_of_turn" is the end of the turn it
+#: was applied in — Stinking Cloud: "until the end of the current turn".
+EffectUntil = Literal["", "start_of_next_turn", "end_of_next_turn", "end_of_turn"]
+
+
 class PassiveEffect(BaseModel):
     """A Foundry top-level ``effects[]`` entry. Drives passive ActiveEffect
     modifiers that the resolver applies while an item is worn/attuned (e.g.
@@ -887,6 +916,12 @@ class PassiveEffect(BaseModel):
     the effect rider to apply. ``statuses`` is Foundry's condition mechanism — a
     list of SRD condition ids (e.g. ``["paralyzed"]``) the effect imposes while
     active; the resolver consumes them to apply conditions.
+
+    ``ends_on`` ends an applied effect at the first matching event after it
+    lands (any one of them); ``until`` ends it on a turn boundary and then
+    governs instead of ``duration``. Foundry has no field for either (the
+    translator's table and a consumer's own data set them); both are left out of
+    a dump when unset, so the corpus files only change where one is set.
     """
 
     id: str = Field(alias="_id", default="")
@@ -897,8 +932,19 @@ class PassiveEffect(BaseModel):
     duration: dict[str, Any] | None = None
     disabled: bool = False
     transfer: bool = True
+    ends_on: list[EffectEndEvent] = Field(default_factory=list)
+    until: EffectUntil = ""
 
     model_config = {"populate_by_name": True}
+
+    @model_serializer(mode="wrap")
+    def _without_absent_endings(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        data: dict[str, Any] = handler(self)
+        if not data.get("ends_on"):
+            data.pop("ends_on", None)
+        if not data.get("until"):
+            data.pop("until", None)
+        return data
 
 
 class Senses(BaseModel, frozen=True):
