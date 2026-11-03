@@ -86,6 +86,16 @@
           "width": ""
         }
       },
+      "trigger": {
+        "against_bearer": false,
+        "also_at_cast": false,
+        "attack": "",
+        "ends_on_save": false,
+        "kind": "area",
+        "once": false,
+        "once_per_turn": false,
+        "subject": "target"
+      },
       "uses": {
         "max": "",
         "recovery": [],
@@ -112,9 +122,13 @@
       },
       "applied_effects": [],
       "area": {
+        "fires": "dnd5eactivity000",
         "map": {
           "obscurement": "heavy"
-        }
+        },
+        "triggers": [
+          "turn_start"
+        ]
       },
       "consumption": {
         "scaling": {

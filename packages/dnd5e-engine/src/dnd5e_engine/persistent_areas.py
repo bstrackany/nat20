@@ -23,8 +23,16 @@ that is always on. The orchestrator owns ``live.areas``, the events and the
 topology overlay; this module holds the record and the pure questions asked of
 it.
 
+What an area does to the creatures it catches (its ``triggers``, E2) is
+asked here too: which moments a step is (``step_moments``), whether the cast
+resolves the area's activity against nobody (``cast_reaches_nobody``), the
+copy an area fires (``fired_copy``), which of a spell's areas fires
+(``same_spell_best``) and where a moved area passes (``line_path``,
+``away_point``).
+
 **Determinism.** Nothing here draws a die. Areas are kept and walked in the
 order they were made, so overlays and ties resolve the same way every replay.
+The orchestrator draws an area's dice only when one of its moments happens.
 """
 
 from __future__ import annotations
@@ -33,12 +41,17 @@ from collections.abc import Callable, Collection, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any, Final
 
-from dnd5e_srd_data.schema.common import PersistentArea
+from dnd5e_srd_data.schema.common import (
+    ActivityTrigger,
+    ActivityTriggerKind,
+    AreaTrigger,
+    PersistentArea,
+)
 
 from dnd5e_engine.areas import AreaTemplate, area_cells, area_template, has_line_of_effect
 from dnd5e_engine.events import AreaKind, AreaShape
 from dnd5e_engine.rules.uses import UsesRollData, evaluate_uses_formula
-from dnd5e_engine.spatial import GridTopology, parse_cell
+from dnd5e_engine.spatial import GridTopology, cell_id, parse_cell
 from dnd5e_engine.specs import LightLevel, Obscurement
 from dnd5e_engine.triggers import EffectIdentity, TriggerSource
 from dnd5e_engine.types.effects import ActiveEffect
@@ -47,13 +60,20 @@ __all__ = [
     "Area",
     "MapOverlay",
     "area_is_live",
+    "away_point",
+    "cast_reaches_nobody",
     "duration_rounds",
     "effects_inside",
     "emanation_cells",
+    "fired_copy",
+    "fires_on",
     "in_area",
+    "line_path",
     "map_overlay",
+    "same_spell_best",
     "silenced",
     "sorted_cells",
+    "step_moments",
     "template_of",
 ]
 
@@ -102,6 +122,13 @@ class Area:
     permanent: bool = False
     #: Creation order, the tie-break between equally potent areas.
     seq: int = 0
+    #: The activity that made the area: what its ``triggers`` fire, unless
+    #: ``spec.fires`` names another (E2).
+    activity_id: str = ""
+    #: The effects its triggers applied, as the lifecycle identifies them: one
+    #: with a duration ends with the area (Black Tentacles' Restrained "until
+    #: the spell ends"); one without (Grease's Prone) stands.
+    applied: set[EffectIdentity] = field(default_factory=set)
 
     @property
     def shape(self) -> AreaShape:
@@ -286,3 +313,108 @@ def effects_inside(
             if key not in best or potency > best[key][0]:
                 best[key] = (potency, effect)
     return [effect.model_copy(update={"target_id": creature_id}) for _, effect in best.values()]
+
+
+# ── E2: what an area does to the creatures it catches ───────────────────────
+#
+# SRD 5.2 writes these moments into each spell: Grease "When the grease
+# appears, each creature standing in its area ... A creature that enters the
+# area or ends its turn there"; Stinking Cloud "Each creature that starts its
+# turn in the Sphere"; Spike Growth "When a creature moves into or within the
+# area, it takes 2d4 Piercing damage for every 5 feet it travels"; Spirit
+# Guardians "whenever the Emanation enters a creature's space". The data names
+# them (``PersistentArea.triggers``); the orchestrator fires the area's activity
+# at each through the held-use path (``_fire_triggered_activity``).
+
+
+def fires_on(area: Area, moment: AreaTrigger) -> bool:
+    """Does the area fire at ``moment``?"""
+    return moment in area.spec.triggers
+
+
+def cast_reaches_nobody(activity: Any) -> bool:
+    """Does the cast resolve this area activity against nobody, because the
+    area itself does the work later?
+
+    - It has moments but not ``created``: Web's save is "The first time a
+      creature enters the webs on a turn or starts its turn there", not when
+      the webs appear; Spike Growth's damage is for moving in it.
+    - It is a utility whose every effect the area delivers live: Silence's
+      creatures are Deafened and immune to Thunder "while entirely inside it",
+      so the cast gives nobody a copy — a caster inside has it through the area,
+      a caster outside never does."""
+    spec = getattr(activity, "area", None)
+    if spec is None:
+        return False
+    if spec.triggers and AreaTrigger.CREATED not in spec.triggers:
+        return True
+    refs = [ref.id for ref in getattr(activity, "effects", ())]
+    return activity.kind == "utility" and bool(refs) and set(refs) <= set(spec.effects)
+
+
+def fired_copy(activity: Any, spec: PersistentArea) -> Any:
+    """The activity as an area fires it: held for the ``area`` moment (the
+    held-use resolver needs a trigger), without its own ``area``, and without
+    the effects the area delivers live (Spirit Guardians' halved Speed is "in
+    the Emanation", never a copy that outlasts leaving it)."""
+    refs = [ref for ref in getattr(activity, "effects", ()) if ref.id not in spec.effects]
+    update: dict[str, Any] = {
+        "trigger": ActivityTrigger(kind=ActivityTriggerKind.AREA),
+        "area": None,
+    }
+    if hasattr(activity, "effects"):
+        update["effects"] = refs
+    return activity.model_copy(update=update)
+
+
+def step_moments(area: Area, was_in: bool, now_in: bool) -> list[AreaTrigger]:
+    """The moments one 5-foot step is for the area: ``enters`` on the step
+    that brings the creature into it, ``moves_within`` on every step that ends
+    in it, the entering one included (Spike Growth: "moves into or within the
+    area ... for every 5 feet it travels")."""
+    moments: list[AreaTrigger] = []
+    if now_in and not was_in and fires_on(area, AreaTrigger.ENTERS):
+        moments.append(AreaTrigger.ENTERS)
+    if now_in and fires_on(area, AreaTrigger.MOVES_WITHIN):
+        moments.append(AreaTrigger.MOVES_WITHIN)
+    return moments
+
+
+def same_spell_best(areas: Iterable[Area]) -> list[Area]:
+    """SRD 5.2 Combining Game Effects — "The effects of the same spell cast
+    multiple times don't combine": of the areas from one source that catch a
+    creature at one moment, only the most potent fires (the higher slot, then
+    the more recent). Kept in creation order."""
+    best: dict[str, Area] = {}
+    for area in areas:
+        held = best.get(area.source_slug)
+        if held is None or ((area.slot_level or 0), area.seq) > ((held.slot_level or 0), held.seq):
+            best[area.source_slug] = area
+    return sorted(best.values(), key=lambda area: area.seq)
+
+
+def line_path(start: str, end: str) -> list[str]:
+    """The cells an area's point of origin passes moving from ``start`` to
+    ``end``, one 5-foot step at a time (diagonal steps first, then straight),
+    ``end`` included and ``start`` not."""
+    col, row = parse_cell(start)
+    end_col, end_row = parse_cell(end)
+    path: list[str] = []
+    while (col, row) != (end_col, end_row):
+        col += (end_col > col) - (end_col < col)
+        row += (end_row > row) - (end_row < row)
+        path.append(cell_id(col, row))
+    return path
+
+
+def away_point(owner: str, origin: str, distance_ft: int, cell_ft: int) -> str | None:
+    """Cloudkill's drift: the point ``distance_ft`` straight away from
+    ``owner`` (the sign of ``origin - owner`` per axis), or ``None`` when the
+    area is centred on its owner and "away" has no direction."""
+    oc, orow = parse_cell(owner)
+    col, row = parse_cell(origin)
+    dc, dr = (col > oc) - (col < oc), (row > orow) - (row < orow)
+    if (dc, dr) == (0, 0):
+        return None
+    steps = distance_ft // cell_ft
+    return cell_id(col + dc * steps, row + dr * steps)

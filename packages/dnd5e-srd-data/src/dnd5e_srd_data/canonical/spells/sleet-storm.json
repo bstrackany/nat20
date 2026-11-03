@@ -10,10 +10,16 @@
       },
       "applied_effects": [],
       "area": {
+        "breaks_concentration": true,
         "map": {
           "difficult_terrain": true,
           "obscurement": "heavy"
-        }
+        },
+        "once_per_turn": true,
+        "triggers": [
+          "enters",
+          "turn_start"
+        ]
       },
       "consumption": {
         "scaling": {
@@ -37,7 +43,17 @@
         "units": "inst",
         "value": null
       },
-      "effects": [],
+      "effects": [
+        {
+          "id": "nat20SleetProne0",
+          "level": {
+            "max": null,
+            "min": null
+          },
+          "on_save": false,
+          "riders": null
+        }
+      ],
       "flags": {},
       "id": "dnd5eactivity000",
       "img": "",
@@ -123,7 +139,20 @@
     "value": "a miniature umbrella"
   },
   "name": "Sleet Storm",
-  "passive_effects": [],
+  "passive_effects": [
+    {
+      "changes": [],
+      "description": "",
+      "disabled": false,
+      "duration": null,
+      "id": "nat20SleetProne0",
+      "name": "Prone",
+      "statuses": [
+        "prone"
+      ],
+      "transfer": false
+    }
+  ],
   "preparation": {
     "mode": "prepared",
     "prepared": false

@@ -93,6 +93,7 @@ def _later(also_at_cast: bool = False) -> ActivityTrigger:
 
 
 _END_ONCE = ActivityTrigger(kind="turn_end", once=True)
+_AREA = ActivityTrigger(kind="area")
 _TABLE = [
     ("acid-arrow", "uAyE5DrJp0YpElcw", "2d4 Acid damage at the end of its next turn", _END_ONCE),
     ("vitriolic-sphere", "dnd5eactivity200", "damage at the end of its next turn", _END_ONCE),
@@ -125,6 +126,10 @@ _TABLE = [
     ("vampiric-touch", "dnd5eactivity000", "Until the spell ends", _later(True)),
     ("telekinesis", "ntGShpXYlBqLMZmK", "on your later turns", _later(True)),
     ("haste", "rBQrZnq7cHkSUAK9", "When the spell ends", _later()),
+    # the activities an area fires (``PersistentArea.fires``), not the cast
+    ("stinking-cloud", "dnd5eactivity000", "starts its turn in the Sphere", _AREA),
+    ("spirit-guardians", "dnd5eactivity000", "whenever the Emanation enters", _AREA),
+    ("incendiary-cloud", "lLAC6qfRLaes7956", "when the Sphere moves into its space", _AREA),
 ]
 
 

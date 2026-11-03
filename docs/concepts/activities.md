@@ -58,6 +58,7 @@ and the corpus marks such an activity with `Activity.trigger`:
 | `reduces_to_zero` | the subject's act drops a creature hostile to it to 0 Hit Points | the subject |
 | `enemy_falls` | a creature hostile to the subject drops to 0 Hit Points, by anyone's act (`within_ft`: only within that many feet of the subject) | the subject |
 | `later_use` | never by the engine: the cast does not resolve it (`also_at_cast`: it does) | — |
+| `area` | its use's area catches a creature at one of the area's `triggers` (the area's `fires` names this activity: Stinking Cloud's "Start of Turn Save") | the creature caught ([Areas on the map](areas.md)) |
 
 The subject is each creature bearing an effect of the use (`subject: target`,
 the default) or the creature that used it (`subject: caster`). The engine

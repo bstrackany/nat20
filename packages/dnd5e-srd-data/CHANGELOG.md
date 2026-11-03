@@ -9,6 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Area triggers (E2).** `PersistentArea` gains `triggers` (`AreaTrigger`:
+  `created` / `enters` / `turn_start` / `turn_end` / `moves_within` /
+  `moved_onto`), `fires`, `once_per_turn`, `breaks_concentration`, `move_ft`
+  and `drifts_ft`, all left out of a dump when unset; trigger options without
+  triggers, a repeated moment, and `move_ft` / `drifts_ft` on an Emanation are
+  refused. `ActivityTriggerKind.AREA` holds an activity an area fires. New
+  export `AreaTrigger`. Translator: `_AREAS` gives triggers to Grease, Web,
+  Sleet Storm, Spike Growth, Stinking Cloud, Moonbeam (`move_ft` 60) and Spirit
+  Guardians (its Half Speed as a live effect, `affects: enemy`), and new areas
+  to Black Tentacles, Insect Plague, Cloudkill (`drifts_ft` 10) and Incendiary
+  Cloud; `_ACTIVITY_TRIGGERS` marks Stinking Cloud's, Spirit Guardians' and
+  Incendiary Cloud's per-turn saves `area`; `_ADDED_SAVE_EFFECTS` adds the
+  Prone (Grease, Sleet Storm) and Restrained (Web) a failed save gives, which
+  the pinned source leaves to a module; `_DROPPED_SAVE_DAMAGE` drops Web's
+  burning 2d4 Fire from its save. Canonical: those eleven spell files changed.
+
 - **`Activity.area`** (`PersistentArea`: `map` — `AreaMap` with
   `obscurement` light / heavy, `lighting` bright / dim / dark,
   `difficult_terrain`, `blocks_verbal` — plus `effects` (ids of the entry's own

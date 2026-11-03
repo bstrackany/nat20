@@ -12,7 +12,10 @@
       "area": {
         "map": {
           "difficult_terrain": true
-        }
+        },
+        "triggers": [
+          "moves_within"
+        ]
       },
       "consumption": {
         "scaling": {

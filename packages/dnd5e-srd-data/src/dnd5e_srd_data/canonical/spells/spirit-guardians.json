@@ -105,6 +105,16 @@
           "width": ""
         }
       },
+      "trigger": {
+        "against_bearer": false,
+        "also_at_cast": false,
+        "attack": "",
+        "ends_on_save": false,
+        "kind": "area",
+        "once": false,
+        "once_per_turn": false,
+        "subject": "target"
+      },
       "uses": {
         "max": "",
         "recovery": [],
@@ -130,7 +140,19 @@
         "value": null
       },
       "applied_effects": [],
-      "area": {},
+      "area": {
+        "affects": "enemy",
+        "effects": [
+          "Q3CLqX7crfusAxkj"
+        ],
+        "fires": "dnd5eactivity000",
+        "once_per_turn": true,
+        "triggers": [
+          "enters",
+          "turn_end",
+          "moved_onto"
+        ]
+      },
       "consumption": {
         "scaling": {
           "allowed": false,

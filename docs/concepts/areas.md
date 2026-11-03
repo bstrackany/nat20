@@ -9,7 +9,9 @@ they surround. The engine keeps all of these as **areas**.
 An area is one of two kinds:
 
 - **placed**: it stays at its point of origin (Fog Cloud, Darkness, Grease, Web,
-  Sleet Storm, Entangle, Spike Growth, Stinking Cloud, Moonbeam, Silence);
+  Sleet Storm, Entangle, Spike Growth, Stinking Cloud, Moonbeam, Silence, Black
+  Tentacles, Insect Plague, Incendiary Cloud), unless the spell moves it
+  (Moonbeam, Cloudkill);
 - **anchored**: it surrounds a creature and moves with it (Spirit Guardians, Aura
   of Protection).
 
@@ -40,11 +42,25 @@ Fog Cloud's `20 * @item.level`, Aura of Protection's `@scale.paladin.aura`.
 | `effects` | ids of the entry's own `passive_effects` that apply to a creature while it is in the area | Aura of Protection's save bonus, Silence's Thunder immunity |
 | `affects` | who those effects reach: `all` (default), `ally` (the owner included), `enemy` | Aura of Protection; Silence; homebrew auras |
 | `inactive_while_incapacitated` | the effects are off while the creature the area surrounds is Incapacitated | Aura of Protection |
+| `triggers` | the moments the area fires an activity at a creature (below) | Moonbeam, Grease, Web, Sleet Storm, Spike Growth, Stinking Cloud, Spirit Guardians, Black Tentacles, Insect Plague, Cloudkill, Incendiary Cloud |
+| `fires` | the activity it fires, when not the one that makes the area (that activity carries `trigger.kind: area`, so the cast doesn't resolve it) | Stinking Cloud's "Start of Turn Save", Spirit Guardians' "Emanation Save", Incendiary Cloud's "Per Turn Save" |
+| `once_per_turn` | a creature makes the save "only once per turn", in any creature's turn | Moonbeam, Spirit Guardians; Web and Sleet Storm ("the first time ... on a turn") |
+| `breaks_concentration` | a creature that fails the save loses Concentration | Sleet Storm |
+| `move_ft` | on a later turn the owner can take a Magic action to move the placed area that far | Moonbeam (60) |
+| `drifts_ft` | the placed area moves that far straight away from its owner at the start of each of the owner's turns | Cloudkill (10) |
+
+`affects` decides who the triggers reach as well as who the effects reach.
+With `all`, that is whoever is in the area, the caster included: a Moonbeam
+or Stinking Cloud over its caster catches it, and one elsewhere never does.
+Spirit Guardians is `enemy`: "you can designate creatures to be unaffected"
+is modelled as the caster and its allies, so neither saves nor has its Speed
+halved.
 
 Defaults are left out when the data is written, so an area that only changes the
-map is written as `{"map": {...}}`. Spirit Guardians, whose area does nothing yet
-(its save is in a later piece), is written as `{}`. An `area` on a `wall`
-template is refused when the data loads.
+map is written as `{"map": {...}}`. An `area` on a `wall` template is refused
+when the data loads, and so are `fires`, `once_per_turn` or
+`breaks_concentration` without `triggers`, a moment listed twice, and
+`move_ft` or `drifts_ft` on an Emanation.
 
 ## When an area is made, and when it ends
 
@@ -109,12 +125,79 @@ from the edge of its bearer's space, and it includes the bearer's own space.
 Every area keeps only the cells it has line of effect to from its origin: a wall
 or a blocked cell drops the cells behind it.
 
+## What an area does to the creatures in it
+
+`triggers` names the moments (`AreaTrigger`), each from a spell's own text:
+
+| Moment | When | Case |
+|---|---|---|
+| `created` | the area appears on a creature: this is the cast's own resolution of the area's activity, against the creatures in it | Moonbeam "When the Cylinder appears"; Grease, Black Tentacles, Insect Plague, Cloudkill, Incendiary Cloud |
+| `enters` | a step brings the creature into the area: its own move, a monster's walk, or a push (each 5-foot step of the push, after it lands) | Grease, Web, Sleet Storm, Moonbeam, Spirit Guardians |
+| `turn_start` | the creature starts its turn in the area | Stinking Cloud, Web, Sleet Storm |
+| `turn_end` | the creature ends its turn in the area | Moonbeam, Grease, Spirit Guardians |
+| `moves_within` | every 5-foot step that ends in the area, the entering one included | Spike Growth "2d4 Piercing damage for every 5 feet it travels" |
+| `moved_onto` | the area comes to cover the creature: an Emanation following its bearer (at each step of the walk), a `move_area`, or a drift | Spirit Guardians "whenever the Emanation enters a creature's space"; Moonbeam, Cloudkill |
+
+An area without `created` among its moments resolves its own activity against
+nobody when cast (SRD 5.2 Web: "The first time a creature enters the webs on a
+turn or starts its turn there" — not when the webs appear), and so does a
+utility whose every effect the area delivers live (Silence). A creature is in
+an area when any cell it occupies is in it.
+
+Each firing emits `AreaTriggered` (the area, the moment, the creature), then
+resolves the activity through the held-use path (`ActivityTriggered` with
+`trigger: "area"`): from the area's owner, at the level it was cast at, with
+the caster's save DC, against that creature. Effects the area delivers live
+(Spirit Guardians' halved Speed) are left off the fired copy. On a walk the
+`ActorMoved` run so far is closed first, so the creature is in the cell when
+it saves. A mover the firing leaves at Speed 0 (Web's Restrained) or at 0 Hit
+Points has no movement left and stops there.
+
+**Once per turn.** One record per spell and creature holds the turn (`round`,
+whichever creature's turn it is) its save was last made in. It is marked before
+the save rolls, and shared by every moment: the cast's own save uses up the
+cast turn (`created`), so the caster's turn end doesn't fire again. It is
+keyed by the spell, not the cast. SRD 5.2 Combining Game Effects: "The effects
+of the same spell cast multiple times don't combine." So a creature in two
+Moonbeams saves once, and at any one moment only the more potent of two
+same-spell areas fires (higher slot, then more recent). An area's record is
+dropped when no area of that spell is left, so a recast starts clean. Spike
+Growth and Grease have no once-per-turn limit.
+
+**How the effects end.** An effect the triggers applied that has a duration
+ends when the area ends (Black Tentacles' Restrained "until the spell ends";
+Web's). One without a duration is a condition that stands (Grease's and Sleet
+Storm's Prone). Only an effect with a duration holds a non-concentration
+spell's area open, so Grease lasts its minute even after it knocks someone
+Prone.
+
+**Moving an area.** A `move_area` intent (`area_id`, `target_zone_id` = the
+new point of origin) moves the actor's own placed area that has `move_ft`, up
+to that many feet, for the Action (a Magic action, which Action Surge can't
+pay for). Because the cast spent the cast turn's Action, the move is always on
+a later turn. The area travels in 5-foot steps along a straight line, emits
+`AreaMoved` with its new cells, and then fires `moved_onto` for each creature
+a step newly covered. Refusals raise `IntentRejectedError`: `target_invalid`
+(no such area of the actor's, one that doesn't move, an off-grid point),
+`out_of_range`, `no_action_economy`. Cloudkill's `drifts_ft` moves the same way
+at its owner's turn start, straight away from the owner. It stops at the grid
+edge, and an area centred on its owner stays put.
+
+**Determinism.** With no area on the map nothing here draws a die. An area's
+dice are drawn when its moment happens: after the step that triggers it on a
+walk, after a push lands, in the `turn_start` / `turn_end` hooks
+(`engine:area-triggers-turn-start`, which runs last at turn start, and
+`engine:area-triggers-turn-end`, just before `engine:areas-turn-end`), and after
+a `move_area`.
+
 ## Events and the view
 
 - `AreaCreated` — `area_id`, `owner_id`, `source_id` (the slug), `kind`,
   `shape`, `size_ft`, `origin` (placed) or `anchor_id` (anchored), `cells`.
-- `AreaMoved` — an anchored area's new `cells`, after its bearer walks or is
-  pushed.
+- `AreaMoved` — an area's new `cells`: an anchored one after its bearer walks
+  or is pushed, a placed one after a `move_area` or a drift.
+- `AreaTriggered` — `area_id`, `source_id`, `trigger` (the moment),
+  `creature_id`.
 - `AreaEnded` — `area_id`.
 
 `LiveCombatView.areas` maps each standing area's id to an `AreaView`. The view
@@ -123,10 +206,26 @@ carries the fields above plus `source_kind`, `source_name`, `map`, `affects` and
 
 ## Not yet
 
-- What happens to a creature that enters an area, starts or ends its turn in
-  it, or moves within it (Spirit Guardians' and Moonbeam's saves, Spike Growth's
-  damage per 5 feet, Web's Restrained). Moving an area (Moonbeam's Magic
-  action) is not modelled either.
+- Escaping by an action: Web, Entangle and Black Tentacles let a Restrained
+  creature "take an action to make a Strength (Athletics) check against your
+  spell save DC". No intent does that yet. The only escape is
+  `escape_grapple`, and it reads a Grapple's stored DC. Entangle's Restrained
+  is ended instead by the existing end-of-turn repeat save on its effect.
+- Web's Restrained "while in the webs": it ends with the webs, not when a push
+  moves the creature out of them. The webs' collapse, burning and the
+  flammable 2d4 Fire are not modelled either.
+- Stinking Cloud's "can't take an action or a Bonus Action" while Poisoned,
+  Moonbeam's shape-shift revert, and Spike Growth's camouflage.
+- Spirit Guardians' halved Speed is in its area's effects, but nothing reads
+  Speed from an effect yet. Its caster can't pick which creatures to spare.
+- Incendiary Cloud's drift ("in a direction you choose"), Flaming Sphere (no
+  template in the data; a Bonus Action move that rams), and a Bonus Action
+  move (a homebrew rift).
+- One area firing different activities at different moments (a homebrew zone:
+  cold at the start of a turn, an acid save at its end).
+- A teleport into an area (no engine teleport exists yet).
+- An enemy an area drops at a turn's end isn't read by `enemy_falls`
+  triggers: the moment sweep runs before the area hook.
 - Wall of Force, and the five `wall` spells: a wall is an edge between cells,
   not a set of cells.
 - Darkness dispelling a light spell of level 2 or lower that it overlaps.

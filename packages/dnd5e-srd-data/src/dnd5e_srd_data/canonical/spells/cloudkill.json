@@ -9,6 +9,19 @@
         "value": null
       },
       "applied_effects": [],
+      "area": {
+        "drifts_ft": 10,
+        "map": {
+          "obscurement": "heavy"
+        },
+        "once_per_turn": true,
+        "triggers": [
+          "created",
+          "enters",
+          "turn_end",
+          "moved_onto"
+        ]
+      },
       "consumption": {
         "scaling": {
           "allowed": false,

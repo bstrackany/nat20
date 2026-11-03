@@ -54,13 +54,14 @@ import logging
 import random
 import re
 from collections import deque
-from collections.abc import AsyncIterator, Callable, Collection, Mapping, Sequence
+from collections.abc import AsyncIterator, Callable, Collection, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from typing import Any, Final, Literal
 
 from dnd5e_srd_data.schema.common import (
     ActivationBlock,
     ActivityTriggerKind,
+    AreaTrigger,
     AttackActivity,
     AttackDamageBlock,
     CastActivity,
@@ -163,6 +164,7 @@ from dnd5e_engine.events import (
     AreaEnded,
     AreaMoved,
     AreaTargeted,
+    AreaTriggered,
     AttackFailed,
     AttackRolled,
     CastFailed,
@@ -221,13 +223,21 @@ from dnd5e_engine.outcome import (
 from dnd5e_engine.persistent_areas import (
     Area,
     area_is_live,
+    away_point,
+    cast_reaches_nobody,
     duration_rounds,
     effects_inside,
     emanation_cells,
+    fired_copy,
+    fires_on,
+    in_area,
+    line_path,
     map_overlay,
     placed_cells,
+    same_spell_best,
     silenced,
     sorted_cells,
+    step_moments,
     template_of,
 )
 from dnd5e_engine.rest import (
@@ -468,6 +478,11 @@ class PlayerIntent(BaseModel):
     # makes no attack roll, is refused with
     # ``AttackFailed(reason="action_unavailable")``. Ignored by other intents.
     stat_block_action_id: str | None = None
+    # SRD 5.2 Moonbeam: "you can take a Magic action on later turns to move the
+    # Cylinder up to 60 feet". The ``LiveCombatView.areas`` id a ``move_area``
+    # moves, to ``target_zone_id`` (its new point of origin). Ignored by other
+    # intents.
+    area_id: str | None = None
 
     @field_validator("direction")
     @classmethod
@@ -1877,6 +1892,7 @@ def push_combatant(live: _LiveCombat, target_id: str, origin_cell: str, distance
         ),
     )
     _follow_bearer(live, target_id)
+    _fire_area_path(live, target_id, [target_cell, *path])
 
 
 def _apply_forced_movement_riders(
@@ -2085,6 +2101,7 @@ def _take_walk_step(live: _LiveCombat, mover_id: str, next_cell: str) -> bool:
         ),
     )
     _follow_bearer(live, mover_id)
+    _fire_area_step(live, mover_id, from_cell, next_cell)
     return True
 
 
@@ -3395,6 +3412,11 @@ class _LiveCombat:
     # ``_sync_areas``, ``_follow_bearer`` and ``_area_effects_on``.
     areas: list[Area] = field(default_factory=list)
     area_seq: int = 0
+    # SRD 5.2 Moonbeam "A creature makes this save only once per turn": the
+    # turn ``(round, actor)`` each ``(source slug, creature)`` last made an
+    # area's ``once_per_turn`` save in — keyed by the spell, not the cast, so
+    # two overlapping Moonbeams give one save (``_fire_area``).
+    area_turn_budget: dict[tuple[str, str], tuple[int, str | None]] = field(default_factory=dict)
     # Event-log indexes ``_fire_moment_triggers`` has read (or that what it fired
     # emitted) since the last turn end, so a nested resolution's events and the
     # turn-end sweep never fire a ``natural_1`` / ``casts_spell`` /
@@ -7217,6 +7239,10 @@ def _register_default_turn_hooks(live: _LiveCombat) -> None:
     effect before the concentration cap can cascade its drop.
     ``engine:areas-turn-end`` follows it: an area held by its duration loses a
     round at its owner's turn end, and every area that no longer stands ends.
+    ``engine:area-triggers-turn-end`` comes just before it, so a creature ending
+    its turn in an area saves while the area still stands; its ``turn_start``
+    twin runs last (an area drifts, then a creature starting its turn in one
+    saves).
     ``engine:moment-triggers-turn-end`` precedes it: the ending turn's natural
     1s and falls no resolution read fire first, so the endings read what they
     emit.
@@ -7265,6 +7291,9 @@ def _register_default_turn_hooks(live: _LiveCombat) -> None:
     live.lifecycle.register(
         "turn_end", _hook_concentration_expiry, key="engine:concentration-expiry"
     )
+    live.lifecycle.register(
+        "turn_end", _hook_area_triggers_turn_end, key="engine:area-triggers-turn-end"
+    )
     live.lifecycle.register("turn_end", _hook_areas_turn_end, key="engine:areas-turn-end")
     live.lifecycle.register("turn_end", _hook_expire_vex_grants, key="engine:vex-expiry")
     live.lifecycle.register("turn_end", _hook_rage_extension, key="engine:rage-extension")
@@ -7279,6 +7308,9 @@ def _register_default_turn_hooks(live: _LiveCombat) -> None:
     )
     live.lifecycle.register(
         "turn_start", _hook_fire_turn_start_triggers, key="engine:activity-triggers-turn-start"
+    )
+    live.lifecycle.register(
+        "turn_start", _hook_area_triggers_turn_start, key="engine:area-triggers-turn-start"
     )
 
 
@@ -9808,6 +9840,8 @@ def _handle_move(live: _LiveCombat, current: Combatant, intent: PlayerIntent) ->
         live.actor_zone[actor_id] = next_cell
         position = next_cell
         run_ft += step_distance
+        if _area_step_closes_run(live, actor_id, path, run_start, run_ft):
+            run_start, run_ft = position, 0
     # A summon dropped to 0 HP on the way has left the order, and its
     # departure already opened the next turn: no ActorMoved.
     if run_ft and _find_combatant(live, actor_id) is not None:
@@ -12019,6 +12053,7 @@ def _sync_areas(live: _LiveCombat) -> None:
     live.areas = standing
     for area in ended:
         _emit(live, AreaEnded(area_id=area.area_id))
+    _end_area_applied(live, ended)
     overlay = map_overlay(live.areas)
     live.topology.apply_area_overlay(
         obscurement=overlay.obscurement,
@@ -12151,6 +12186,7 @@ def _make_area(
         rounds_remaining=rounds,
         permanent=permanent,
         seq=live.area_seq,
+        activity_id=activity.id,
     )
     live.areas.append(area)
     _emit(
@@ -12168,6 +12204,7 @@ def _make_area(
         ),
     )
     _sync_areas(live)
+    _mark_area_created(live, area)
 
 
 def _seed_always_on_areas(
@@ -12240,6 +12277,7 @@ def _make_areas_for_intent(
     applied = _effects_applied_since(live, pre_event_count)
     concentration = isinstance(source, Spell) and source.concentration
     held_by = frozenset(applied)
+    held_by = frozenset(i for i in held_by if _identity_lasts(live, i))
     if concentration:
         chain = live.concentration_chain.get(current.entity_id, [])
         if not any(i in chain for i in applied):
@@ -12347,6 +12385,389 @@ def _silenced_cast_failure(
     return CastFailed(
         actor_id=actor_id, spell_id=intent.spell_id or "", reason="components_missing"
     )
+
+
+# ── E2: what an area does to the creatures it catches (``persistent_areas``) ─
+#
+# An area whose data names moments (``PersistentArea.triggers``) fires its
+# activity — the one that made it, or the one ``fires`` names — against a
+# creature at each: the area appearing on it (the cast's own resolution), the
+# creature entering it on a walk, a monster step or a push, starting or ending
+# its turn in it, moving within it (per 5-foot step), or the area moving onto
+# it (an Emanation following its bearer, Moonbeam's Magic action, Cloudkill's
+# drift). Each firing goes through the held-use resolver
+# (``_fire_triggered_activity``) as the owner, at the cast's level and save DC.
+#
+# **Determinism.** With no area on the map, every function here returns before
+# reading anything, so no die is drawn. An area's dice are drawn when its moment
+# happens: mid-walk after the step that triggers it, after a push lands (cell by
+# cell along its path), in the ``turn_start`` / ``turn_end`` hooks, after a
+# ``move_area``.
+
+
+def _area_source(area: Area) -> Any:
+    """The spell, feature, feat or item that made the area."""
+    loader = get_lib_loader()
+    getter: dict[str, Callable[[str], Any]] = {
+        "spell": loader.get_spell,
+        "feature": loader.get_feature,
+        "feat": loader.get_feat,
+        "item": loader.get_item,
+    }
+    return getter[area.source_kind](area.source_slug)
+
+
+def _area_use(live: _LiveCombat, area: Area, source: Any) -> HeldUse:
+    """The use a fired area activity resolves as: the owner's, at the level
+    the area was made at, with the spell's casting ability."""
+    owner = _find_combatant(live, area.owner_id)
+    spell = source if isinstance(source, Spell) else None
+    return HeldUse(
+        owner_id=area.owner_id,
+        source_kind=area.source_kind,
+        source_slug=area.source_slug,
+        source_name=area.source_name,
+        slot_level=area.slot_level,
+        base_level=spell.level if spell is not None else None,
+        spellcasting_ability=(
+            _spellcasting_ability_for(owner, spell.slug)
+            if spell is not None and owner is not None
+            else None
+        ),
+        activities=[],
+        passive_effects=list(source.passive_effects),
+    )
+
+
+def _turn_now(live: _LiveCombat) -> tuple[int, str | None]:
+    """The turn under way: whichever creature's it is (SRD 5.2 "once per turn"
+    counts every creature's turn, not only the affected creature's)."""
+    return (live.round_number, live.current_actor_id)
+
+
+def _area_may_fire(live: _LiveCombat, area: Area, moment: AreaTrigger, creature_id: str) -> bool:
+    """Does ``area`` fire at ``moment`` on ``creature_id``: a moment of its, a
+    creature its ``affects`` reaches (the owner too, unless the spell spares it
+    — Spirit Guardians' designated creatures), alive, and with its once-per-turn
+    save for this spell not made this turn?"""
+    if not fires_on(area, moment) or not _area_reaches(live, area, creature_id):
+        return False
+    creature = _find_combatant(live, creature_id)
+    if creature is None or not creature.is_alive or creature_id in live.dead_ids:
+        return False
+    key = (area.source_slug, creature_id)
+    return not (area.spec.once_per_turn and live.area_turn_budget.get(key) == _turn_now(live))
+
+
+def _fire_area(live: _LiveCombat, area: Area, moment: AreaTrigger, creature_id: str) -> None:
+    """Fire the area's activity against ``creature_id``: mark its once-per-turn
+    save made first (a save that outlasts the turn never fires twice), emit
+    ``AreaTriggered``, resolve through ``_fire_triggered_activity``, and keep
+    the effects it applied with the area. Sleet Storm's failed save also ends
+    the creature's concentration."""
+    source = _area_source(area)
+    wanted = area.spec.fires or area.activity_id
+    activity = next((a for a in getattr(source, "activities", ()) if a.id == wanted), None)
+    if activity is None:
+        _LOGGER.warning("area_trigger_activity_missing slug=%s id=%s", area.source_slug, wanted)
+        return
+    if area.spec.once_per_turn:
+        live.area_turn_budget[(area.source_slug, creature_id)] = _turn_now(live)
+    _emit(
+        live,
+        AreaTriggered(
+            area_id=area.area_id,
+            source_id=area.source_slug,
+            trigger=moment.value,
+            creature_id=creature_id,
+        ),
+    )
+    pre_event_count = len(live.event_log)
+    _fire_triggered_activity(
+        live,
+        _area_use(live, area, source),
+        fired_copy(activity, area.spec),
+        subject_id=creature_id,
+        target_id=creature_id,
+    )
+    area.applied |= _effects_applied_since(live, pre_event_count)
+    if (
+        area.spec.breaks_concentration
+        and live.concentration_chain.get(creature_id)
+        and any(
+            isinstance(ev, SaveRolled) and ev.target_id == creature_id and not ev.succeeded
+            for ev in live.event_log[pre_event_count:]
+        )
+    ):
+        _drop_concentration(live, creature_id)
+
+
+def _fire_areas_at(
+    live: _LiveCombat, moment: AreaTrigger, creature_id: str, areas: Iterable[Area]
+) -> bool:
+    """Fire ``moment`` on ``creature_id`` for each of ``areas`` that may fire —
+    only the most potent area of one spell (``same_spell_best``). ``True``
+    when any fired."""
+    chosen = same_spell_best(a for a in areas if _area_may_fire(live, a, moment, creature_id))
+    for area in chosen:
+        _fire_area(live, area, moment, creature_id)
+    return bool(chosen)
+
+
+def _footprint_at(live: _LiveCombat, entity_id: str, cell: str) -> frozenset[str]:
+    """The cells ``entity_id`` occupies standing at ``cell`` — one today, like
+    ``_cells_of``; every area question takes the whole set."""
+    del live, entity_id
+    return frozenset({cell})
+
+
+def _area_step_firings(
+    live: _LiveCombat, mover_id: str, from_cell: str, to_cell: str
+) -> list[tuple[AreaTrigger, str, list[Area]]]:
+    """What one 5-foot step of ``mover_id`` fires, in order: its ``enters`` /
+    ``moves_within`` for each area the step brings it into or keeps it in
+    (``step_moments``), then ``moved_onto`` for each creature an Emanation it
+    bears newly covers. Only firings some area may still make are kept."""
+    before = _footprint_at(live, mover_id, from_cell)
+    after = _footprint_at(live, mover_id, to_cell)
+    out: list[tuple[AreaTrigger, str, list[Area]]] = []
+    by_moment: dict[AreaTrigger, list[Area]] = {}
+    for area in live.areas:
+        if area.anchor_id == mover_id:
+            continue
+        for moment in step_moments(area, in_area(area, before), in_area(area, after)):
+            by_moment.setdefault(moment, []).append(area)
+    out.extend((moment, mover_id, areas) for moment, areas in by_moment.items())
+    for area in live.areas:
+        if area.anchor_id != mover_id or not fires_on(area, AreaTrigger.MOVED_ONTO):
+            continue
+        was = emanation_cells(live.topology, before, area.template.size_ft)
+        now = emanation_cells(live.topology, after, area.template.size_ft)
+        for other in live.initiative:
+            cells = _cells_of(live, other.entity_id)
+            if other.entity_id != mover_id and not was & cells and now & cells:
+                out.append((AreaTrigger.MOVED_ONTO, other.entity_id, [area]))
+    return [
+        (moment, creature, kept)
+        for moment, creature, areas in out
+        if (kept := [a for a in areas if _area_may_fire(live, a, moment, creature)])
+    ]
+
+
+def _fire_step_firings(
+    live: _LiveCombat, mover_id: str, firings: list[tuple[AreaTrigger, str, list[Area]]]
+) -> None:
+    """Fire a step's firings; a mover they leave at Speed 0 (Web's Restrained)
+    or at 0 Hit Points has no movement left, so its walk stops in that cell."""
+    for moment, creature_id, areas in firings:
+        _fire_areas_at(live, moment, creature_id, areas)
+    mover = _find_combatant(live, mover_id)
+    if mover is not None and (not mover.is_alive or _effective_speed(mover, live) == 0):
+        _update_combatant(live, mover_id, movement_remaining=0)
+
+
+def _fire_area_step(live: _LiveCombat, mover_id: str, from_cell: str, to_cell: str) -> None:
+    """After one step of a walk (a monster's, or a push's): fire what it
+    brings about (``_area_step_firings``)."""
+    if live.areas:
+        _fire_step_firings(live, mover_id, _area_step_firings(live, mover_id, from_cell, to_cell))
+
+
+def _fire_area_path(live: _LiveCombat, mover_id: str, cells: Sequence[str]) -> None:
+    """After a forced move lands: fire each 5-foot step of its path in turn
+    (SRD 5.2 Spike Growth "moves into or within the area" — a push moves it)."""
+    for from_cell, to_cell in itertools.pairwise(cells):
+        _fire_area_step(live, mover_id, from_cell, to_cell)
+
+
+def _area_step_closes_run(
+    live: _LiveCombat, mover_id: str, path: Sequence[str], run_start: str, run_ft: int
+) -> bool:
+    """For a ``move``: when the step just taken fires an area, close the
+    ``ActorMoved`` run there first (the creature is in the cell when the save
+    happens), then fire. ``True`` when it did, and the run restarts."""
+    if not live.areas:
+        return False
+    position = live.actor_zone[mover_id]
+    from_cell = path[path.index(position) - 1]
+    firings = _area_step_firings(live, mover_id, from_cell, position)
+    if not firings:
+        return False
+    _emit(
+        live,
+        ActorMoved(actor_id=mover_id, from_zone=run_start, to_zone=position, distance_ft=run_ft),
+    )
+    _fire_step_firings(live, mover_id, firings)
+    return True
+
+
+def _areas_holding(live: _LiveCombat, entity_id: str) -> list[Area]:
+    cells = _cells_of(live, entity_id)
+    return [area for area in live.areas if in_area(area, cells)]
+
+
+def _hook_area_triggers_turn_start(live: _LiveCombat, actor_id: str | None) -> None:
+    """``turn_start`` hook — the actor's areas drift (Cloudkill: "The Sphere
+    moves 10 feet away from you at the start of each of your turns"), then a
+    creature starting its turn in an area makes its save (Stinking Cloud:
+    "Each creature that starts its turn in the Sphere")."""
+    if actor_id is None or not live.areas:
+        return
+    for area in [a for a in live.areas if a.owner_id == actor_id and a.spec.drifts_ft]:
+        _drift_area(live, area)
+    _fire_areas_at(live, AreaTrigger.TURN_START, actor_id, _areas_holding(live, actor_id))
+
+
+def _hook_area_triggers_turn_end(live: _LiveCombat, actor_id: str | None) -> None:
+    """``turn_end`` hook — a creature ending its turn in an area (Moonbeam:
+    "when it ... ends its turn there"). Runs before ``engine:areas-turn-end``
+    counts the areas' rounds down, so an area's last turn still fires."""
+    if actor_id is not None and live.areas:
+        _fire_areas_at(live, AreaTrigger.TURN_END, actor_id, _areas_holding(live, actor_id))
+
+
+def _mark_area_created(live: _LiveCombat, area: Area) -> None:
+    """SRD 5.2 Moonbeam: "When the Cylinder appears, each creature in it makes
+    a Constitution saving throw. ... A creature makes this save only once per
+    turn" — that save is the cast's own resolution, so it uses up this turn's
+    save of each creature the area reaches."""
+    if not (area.spec.once_per_turn and fires_on(area, AreaTrigger.CREATED)):
+        return
+    for creature in live.initiative:
+        creature_id = creature.entity_id
+        if in_area(area, _cells_of(live, creature_id)) and _area_reaches(live, area, creature_id):
+            live.area_turn_budget[(area.source_slug, creature_id)] = _turn_now(live)
+
+
+def _has_duration(effect: ActiveEffect) -> bool:
+    duration = effect.duration
+    return any(value for value in (duration.rounds, duration.turns, duration.seconds))
+
+
+def _identity_lasts(live: _LiveCombat, identity: tuple[str, str, str]) -> bool:
+    """Is the effect ``identity`` names on its bearer with a duration? Only
+    such an effect holds a spell's area open: Grease's Prone is a condition,
+    so the grease lasts its own minute."""
+    bearer, effect_id, origin = identity
+    return any(
+        e.id == effect_id and e.origin == origin and _has_duration(e)
+        for e in live.active_effects.get(bearer, [])
+    )
+
+
+def _end_area_applied(live: _LiveCombat, ended: Sequence[Area]) -> None:
+    """When an area ends, so do the effects its triggers applied that last a
+    while (Black Tentacles' Restrained "until the spell ends", Web's); a bare
+    condition with no duration (Grease's Prone) stands. Then a spell with no
+    area left forgets its once-per-turn record, so a recast starts clean."""
+    for area in ended:
+        for identity in sorted(area.applied):
+            bearer, effect_id, origin = identity
+            effect = next(
+                (
+                    e
+                    for e in live.active_effects.get(bearer, [])
+                    if e.id == effect_id and e.origin == origin
+                ),
+                None,
+            )
+            if effect is None or not _has_duration(effect):
+                continue
+            _emit(
+                live,
+                EffectExpired(
+                    effect_id=effect_id, target_id=bearer, origin=origin, reason="duration"
+                ),
+            )
+            for condition in live.conditions_by_effect.pop(identity, []):
+                _emit(live, ConditionRemoved(target_id=bearer, condition=condition))
+    if ended:
+        standing = {area.source_slug for area in live.areas}
+        for key in [k for k in live.area_turn_budget if k[0] not in standing]:
+            del live.area_turn_budget[key]
+
+
+def _relocate_area(live: _LiveCombat, area: Area, destination: str) -> None:
+    """Move a placed area's point of origin to ``destination`` along a
+    straight 5-foot-step path (``line_path``): emit ``AreaMoved``, re-lay the
+    map, then fire ``moved_onto`` on every creature a step newly covered, in
+    the order it was reached (SRD 5.2 Moonbeam "when the spell's area moves
+    into its space")."""
+    if area.origin is None:
+        return
+    covered = {c.entity_id for c in live.initiative if in_area(area, _cells_of(live, c.entity_id))}
+    caught: list[str] = []
+    cells = area.cells
+    for point in line_path(area.origin, destination):
+        cells = placed_cells(live.topology, area.template, point, area.direction)
+        now = {
+            c.entity_id
+            for c in live.initiative
+            if not cells.isdisjoint(_cells_of(live, c.entity_id))
+        }
+        caught.extend(
+            c.entity_id
+            for c in live.initiative
+            if c.entity_id in now - covered and c.entity_id not in caught
+        )
+        covered = now
+    area.origin, area.cells = destination, cells
+    _emit(live, AreaMoved(area_id=area.area_id, cells=sorted_cells(cells)))
+    _sync_areas(live)
+    for creature_id in caught:
+        _fire_areas_at(live, AreaTrigger.MOVED_ONTO, creature_id, [area])
+
+
+def _drift_area(live: _LiveCombat, area: Area) -> None:
+    """Cloudkill's drift: ``drifts_ft`` straight away from its owner, stopping
+    at the grid's edge; an area centred on its owner has no "away" and stays."""
+    owner_cell = live.actor_zone.get(area.owner_id)
+    if area.origin is None or owner_cell is None or area.spec.drifts_ft is None:
+        return
+    far = away_point(owner_cell, area.origin, area.spec.drifts_ft, live.topology.cell_size_ft)
+    path = [] if far is None else line_path(area.origin, far)
+    reachable = list(itertools.takewhile(live.topology.is_valid_cell, path))
+    if reachable:
+        _relocate_area(live, area, reachable[-1])
+
+
+def _handle_move_area(live: _LiveCombat, current: Combatant, intent: PlayerIntent) -> None:
+    """SRD 5.2 Moonbeam — "you can take a Magic action on later turns to move
+    the Cylinder up to 60 feet": move the actor's own placed area
+    (``intent.area_id``) so its point of origin is ``target_zone_id``, then
+    fire ``moved_onto`` on the creatures it passes into. Spends the Action
+    (a Magic action: no Action Surge) and keeps the turn.
+
+    Rejections raise ``IntentRejectedError`` and change nothing:
+    ``target_invalid`` — no such area of the actor's, one that can't be moved
+    (no ``move_ft``), or no valid destination; ``out_of_range`` — farther than
+    ``move_ft``; ``no_action_economy`` — the Action is spent (which also keeps
+    it to "later turns": the cast spent the cast turn's Action)."""
+    actor_id = current.entity_id
+    area = next((a for a in live.areas if a.area_id == intent.area_id), None)
+    destination = intent.target_zone_id
+    if (
+        area is None
+        or area.owner_id != actor_id
+        or area.spec.move_ft is None
+        or area.origin is None
+        or destination is None
+        or not live.topology.is_valid_cell(destination)
+    ):
+        raise IntentRejectedError(
+            "target_invalid", f"actor_id={actor_id!r} has no area {intent.area_id!r} to move now"
+        )
+    distance = live.topology.distance_ft(area.origin, destination)
+    if distance is None or distance > area.spec.move_ft:
+        raise IntentRejectedError(
+            "out_of_range", f"{destination!r} is beyond {area.spec.move_ft} ft of the area"
+        )
+    if not current.action_available:
+        raise IntentRejectedError(
+            "no_action_economy", f"actor_id={actor_id!r} has no Action to move the area"
+        )
+    _update_combatant(live, actor_id, action_available=False)
+    _relocate_area(live, area, destination)
 
 
 def _end_use_effects_on(
@@ -13069,6 +13490,8 @@ def _resolve_targets(
     feature. A count-bearing activity (Magic Missile darts) expands via
     ``_count_scaled_targets`` in place of the plain ``target_id`` lookup."""
     targets: list[Combatant]
+    if activities and all(cast_reaches_nobody(a) for a in activities):
+        return []
     plan = _area_plan(intent, activities)
     if plan is not None:
         targets = _area_targets(live, current, intent, plan)
@@ -14288,6 +14711,9 @@ async def _dispatch_turn_nonending_intent(
         return True
     if intent.intent_type == "disarm":
         _handle_disarm(live, current, intent)
+        return True
+    if intent.intent_type == "move_area":
+        _handle_move_area(live, current, intent)
         return True
     return False
 

@@ -16,6 +16,31 @@ caster takes. Requires the matching `dnd5e-srd-data`.
 
 ### Added
 
+- **What an area does to the creatures in it (E2).** An area whose data names
+  `PersistentArea.triggers` fires its activity (or the one `fires` names) at a
+  creature, as the owner at the cast's level and save DC, through the held-use
+  resolver: when it appears (the cast's own save, which uses up that turn's
+  once-per-turn save), when the creature enters it (a walk, a monster step, a
+  push: each 5-foot step, after the push lands), starts or ends its turn in it
+  (`engine:area-triggers-turn-start` / `-turn-end` hooks), moves within it (per
+  5-foot step: Spike Growth), or when the area comes onto it (an Emanation
+  following its bearer, step by step; a moved or drifting area). New event
+  `AreaTriggered`; `ActivityTriggered.trigger` gains `"area"`. Once per turn is
+  one record per spell and creature per turn (any creature's), marked before the
+  save; at one moment only the most potent of a spell's areas fires. A
+  walking creature's `ActorMoved` run closes before the save, and a mover left at
+  Speed 0 or 0 HP stops there. Effects with a duration that an area's triggers
+  applied end with the area (Black Tentacles' Restrained); Prone stands. Sleet
+  Storm's failed save ends the creature's concentration. Whoever is in the area
+  is caught, its caster included, unless `affects` spares them (Spirit
+  Guardians: the caster's side).
+- **`move_area` intent** (`PlayerIntent.area_id` + `target_zone_id`): the
+  owner moves a placed area with `move_ft` that far for its Action (Moonbeam's
+  Magic action, 60 ft), in 5-foot steps, `AreaMoved`, then `moved_onto` saves;
+  refused with `target_invalid` / `out_of_range` / `no_action_economy`.
+  Cloudkill drifts 10 ft away from its caster at the caster's turn start
+  (`drifts_ft`).
+
 - **Areas that stay on the map.** An activity the corpus marks with
   `Activity.area` (`dnd5e-srd-data`, unreleased) leaves an area after its cast,
   feature use or item use: **placed** at the cast's own point of origin and aim
@@ -265,6 +290,16 @@ caster takes. Requires the matching `dnd5e-srd-data`.
   from the later turn's instead.
 
 ### Fixed
+
+- A cast resolves an area activity against nobody when the area does the work
+  later (`persistent_areas.cast_reaches_nobody`): Web, Sleet Storm and Spike
+  Growth no longer save or deal damage when cast, and a Silence no longer gives
+  its caster a Silenced copy wherever the sphere is (a caster inside has it
+  through the area). Stinking Cloud's and Spirit Guardians' saves and
+  Incendiary Cloud's "Per Turn Save" wait for the area (`trigger.kind: area`)
+  instead of hitting the caster, or the cast's target, at the cast.
+- A non-concentration area (Grease) is held open only by an applied effect with
+  a duration, so the Prone it causes no longer keeps it on the map forever.
 
 - **Arming order with an ineligible first entry.** `_pop_pending_reaction` took
   only a reactor's first armed entry for a trigger and skipped the reactor when

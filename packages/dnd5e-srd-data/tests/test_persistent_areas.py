@@ -13,6 +13,7 @@ from pydantic import ValidationError
 
 from dnd5e_srd_data import (
     AreaMap,
+    AreaTrigger,
     BundledAssetLoader,
     PersistentArea,
     TargetBlock,
@@ -20,10 +21,15 @@ from dnd5e_srd_data import (
     UtilityActivity,
 )
 from tools.translators.foundry import (
+    _ADDED_SAVE_EFFECTS,
     _AREAS,
+    _DROPPED_SAVE_DAMAGE,
     _FEATURE_EFFECT_VALUE_CORRECTIONS,
+    _append_added_save_effects,
+    _apply_added_save_effect_refs,
     _apply_areas,
     _apply_feature_effect_value_corrections,
+    _drop_save_damage,
 )
 
 LOADER = BundledAssetLoader()
@@ -75,6 +81,17 @@ def test_an_area_round_trips() -> None:
         lambda: AreaMap(lighting="sunlight"),
         lambda: PersistentArea(affects="neutral"),
         lambda: PersistentArea(cover="half"),
+        # a trigger option needs triggers; a moment once; only a placed area moves
+        lambda: PersistentArea(once_per_turn=True),
+        lambda: PersistentArea(fires="x"),
+        lambda: PersistentArea(triggers=["enters", "enters"]),
+        lambda: PersistentArea(triggers=["when_it_rains"]),
+        lambda: PersistentArea(move_ft=0),
+        lambda: UtilityActivity(
+            _id="x",
+            target=TargetBlock(template=TargetTemplateBlock(type="radius", size="10")),
+            area=PersistentArea(move_ft=30),
+        ),
     ],
 )
 def test_an_area_the_engine_cannot_run_is_refused(build) -> None:  # type: ignore[no-untyped-def]
@@ -96,6 +113,10 @@ def test_an_area_the_engine_cannot_run_is_refused(build) -> None:  # type: ignor
         ("spells", "moonbeam", "Dim Light fills the Cylinder"),
         ("spells", "silence", "Casting a spell that includes a Verbal component is impossible"),
         ("spells", "spirit-guardians", "flit around you in a 15-foot Emanation"),
+        ("spells", "black-tentacles", "A creature makes that save only once per turn"),
+        ("spells", "insect-plague", "for the first time on a turn or ends its turn there"),
+        ("spells", "cloudkill", "moves 10 feet away from you at the start of each"),
+        ("spells", "incendiary-cloud", "A creature makes this save only once per turn"),
         ("features", "aura-of-protection", "The aura is inactive while you have"),
     ],
 )
@@ -111,6 +132,86 @@ def test_the_table_reached_the_corpus(kind: str, slug: str, sentence: str) -> No
     assert shipped["area"] == area.model_dump(mode="json")
     bare = [a.model_copy(update={"area": None}) for a in entry.activities]
     assert _apply_areas(slug, bare) == list(entry.activities)
+
+
+def test_an_areas_triggers_round_trip_and_dump_only_when_set() -> None:
+    area = PersistentArea(
+        triggers=[AreaTrigger.ENTERS, AreaTrigger.TURN_START],
+        fires="save",
+        once_per_turn=True,
+        breaks_concentration=True,
+        move_ft=60,
+        drifts_ft=10,
+    )
+    dumped = area.model_dump(mode="json")
+    assert dumped == {
+        "triggers": ["enters", "turn_start"],
+        "fires": "save",
+        "once_per_turn": True,
+        "breaks_concentration": True,
+        "move_ft": 60,
+        "drifts_ft": 10,
+    }
+    assert PersistentArea.model_validate(dumped) == area
+
+
+@pytest.mark.parametrize(
+    ("slug", "activity_id", "effect_id", "status", "sentence"),
+    [
+        (
+            "grease",
+            "dnd5eactivity000",
+            "nat20GreaseProne",
+            "prone",
+            "or have the &amp;Reference[prone]",
+        ),
+        (
+            "web",
+            "dnd5eactivity000",
+            "nat20WebRestrain",
+            "restrained",
+            "or have the &amp;Reference[restrained]",
+        ),
+        (
+            "sleet-storm",
+            "dnd5eactivity000",
+            "nat20SleetProne0",
+            "prone",
+            "or have the &amp;Reference[prone]",
+        ),
+    ],
+)
+def test_a_failed_save_applies_its_condition(
+    slug: str, activity_id: str, effect_id: str, status: str, sentence: str
+) -> None:
+    """The condition each sentence names on a failed save, which the pinned
+    Foundry source leaves to a module; added with ``_ADDED_SAVE_EFFECTS``."""
+    spell = LOADER.get_spell(slug)
+    assert spell is not None
+    assert sentence in spell.description
+    [activity] = [a for a in spell.activities if a.id == activity_id]
+    assert [(r.id, r.on_save) for r in activity.effects] == [(effect_id, False)]
+    [effect] = [e for e in spell.passive_effects if e.id == effect_id]
+    assert effect.statuses == [status]
+    assert _ADDED_SAVE_EFFECTS[(slug, activity_id)] == effect
+    bare = [a.model_copy(update={"effects": []}) for a in spell.activities]
+    assert _drop_save_damage(slug, _apply_added_save_effect_refs(slug, bare)) == list(
+        spell.activities
+    )
+    others = [e for e in spell.passive_effects if e.id != effect_id]
+    assert _append_added_save_effects(slug, others) == list(spell.passive_effects)
+
+
+def test_webs_burning_is_not_the_save_damage() -> None:
+    """ "Any 5-foot Cube of webs exposed to fire burns away in 1 round, dealing
+    2d4 Fire damage to any creature that starts its turn in the fire" — not the
+    save's damage."""
+    web = LOADER.get_spell("web")
+    assert web is not None
+    assert "burns away in 1 round" in web.description
+    assert {("web", "dnd5eactivity000")} == _DROPPED_SAVE_DAMAGE
+    [activity] = web.activities
+    assert activity.damage.parts == []  # type: ignore[union-attr]
 
 
 def test_aura_of_protection_has_its_minimum() -> None:

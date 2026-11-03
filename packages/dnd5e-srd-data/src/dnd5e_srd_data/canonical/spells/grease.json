@@ -12,7 +12,12 @@
       "area": {
         "map": {
           "difficult_terrain": true
-        }
+        },
+        "triggers": [
+          "created",
+          "enters",
+          "turn_end"
+        ]
       },
       "consumption": {
         "scaling": {
@@ -36,7 +41,17 @@
         "units": "inst",
         "value": null
       },
-      "effects": [],
+      "effects": [
+        {
+          "id": "nat20GreaseProne",
+          "level": {
+            "max": null,
+            "min": null
+          },
+          "on_save": false,
+          "riders": null
+        }
+      ],
       "flags": {},
       "id": "dnd5eactivity000",
       "img": "",
@@ -122,7 +137,20 @@
     "value": "a bit of pork rind or butter"
   },
   "name": "Grease",
-  "passive_effects": [],
+  "passive_effects": [
+    {
+      "changes": [],
+      "description": "",
+      "disabled": false,
+      "duration": null,
+      "id": "nat20GreaseProne",
+      "name": "Prone",
+      "statuses": [
+        "prone"
+      ],
+      "transfer": false
+    }
+  ],
   "preparation": {
     "mode": "prepared",
     "prepared": false

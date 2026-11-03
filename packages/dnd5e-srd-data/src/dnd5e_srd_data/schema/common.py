@@ -204,6 +204,11 @@ class ActivityTriggerKind(StrEnum):
     REDUCES_TO_ZERO = "reduces_to_zero"
     # Dark One's Blessing — "an enemy within 10 feet of you is reduced to 0 Hit Points"
     ENEMY_FALLS = "enemy_falls"
+    # The use's area catches a creature, at a moment its ``PersistentArea
+    # .triggers`` names and whose ``fires`` points here: Stinking Cloud's "Each
+    # creature that starts its turn in the Sphere must succeed on a
+    # Constitution saving throw" (not with the cast)
+    AREA = "area"
 
 
 class ActivityTriggerSubject(StrEnum):
@@ -437,6 +442,29 @@ class AreaMap(BaseModel, frozen=True, extra="forbid"):
         return {key: value for key, value in data.items() if value}
 
 
+class AreaTrigger(StrEnum):
+    """A moment an area fires its activity against a creature (``PersistentArea
+    .triggers``). The creature is always the one the moment is about."""
+
+    # Moonbeam — "When the Cylinder appears, each creature in it makes a
+    # Constitution saving throw": the cast's own resolution of the area's
+    # activity, against the creatures in the area. Without it the cast resolves
+    # that activity against nobody (Web, Sleet Storm, Spike Growth).
+    CREATED = "created"
+    # Grease — "A creature that enters the area ... must also succeed on that save"
+    ENTERS = "enters"
+    # Stinking Cloud — "Each creature that starts its turn in the Sphere"
+    TURN_START = "turn_start"
+    # Moonbeam — "when it enters the spell's area or ends its turn there"
+    TURN_END = "turn_end"
+    # Spike Growth — "When a creature moves into or within the area, it takes
+    # 2d4 Piercing damage for every 5 feet it travels"
+    MOVES_WITHIN = "moves_within"
+    # Spirit Guardians — "whenever the Emanation enters a creature's space";
+    # Moonbeam — "when the spell's area moves into its space"
+    MOVED_ONTO = "moved_onto"
+
+
 class PersistentArea(BaseModel, frozen=True, extra="forbid"):
     """An activity whose area stays on the map after the use that makes it.
 
@@ -453,19 +481,62 @@ class PersistentArea(BaseModel, frozen=True, extra="forbid"):
     Incapacitated condition (Aura of Protection: "The aura is inactive while you
     have the Incapacitated condition"). Defaults are left out of a dump, so an
     area that only marks the map dumps as ``{"map": {...}}``.
+
+    ``triggers`` are the moments the area fires an activity against a creature
+    in it (``AreaTrigger``), for the creatures ``affects`` names (the owner
+    included unless ``affects`` leaves it out): the activity that makes the
+    area, or the one ``fires`` names (Spirit Guardians' "Emanation Save", which
+    carries ``trigger.kind: area`` so it waits for the area). Its save DC and
+    scaling are the cast's. ``once_per_turn`` lets a creature make it "only
+    once per turn" (Moonbeam), or only "the first time ... on a turn" (Web,
+    Sleet Storm), in any creature's turn, however many moments happen.
+    ``breaks_concentration`` ends the concentration of a creature that fails
+    the save (Sleet Storm: "or have the Prone condition and lose
+    Concentration"). ``move_ft``: on a later turn the owner can take a Magic
+    action to move a placed area up to that many feet (Moonbeam: "you can take
+    a Magic action on later turns to move the Cylinder up to 60 feet").
+    ``drifts_ft``: the area moves that far straight away from its owner at the
+    start of each of the owner's turns (Cloudkill: "The Sphere moves 10 feet
+    away from you at the start of each of your turns").
     """
 
     map: AreaMap = Field(default_factory=AreaMap)
     effects: list[str] = Field(default_factory=list)
     affects: AreaAffects = "all"
     inactive_while_incapacitated: bool = False
+    triggers: list[AreaTrigger] = Field(default_factory=list)
+    fires: str = ""
+    once_per_turn: bool = False
+    breaks_concentration: bool = False
+    move_ft: int | None = Field(default=None, gt=0)
+    drifts_ft: int | None = Field(default=None, gt=0)
+
+    @model_validator(mode="after")
+    def _trigger_options_need_triggers(self) -> PersistentArea:
+        """``fires``, ``once_per_turn`` and ``breaks_concentration`` only mean
+        something for an area that fires; its ``triggers`` are distinct."""
+        if not self.triggers and (self.fires or self.once_per_turn or self.breaks_concentration):
+            raise ValueError("area: fires / once_per_turn / breaks_concentration need triggers")
+        if len(set(self.triggers)) != len(self.triggers):
+            raise ValueError("area: triggers must be distinct")
+        return self
 
     @model_serializer(mode="wrap")
     def _without_defaults(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
         data: dict[str, Any] = handler(self)
         if data.get("affects") == "all":
             data.pop("affects", None)
-        for key in ("map", "effects", "inactive_while_incapacitated"):
+        for key in (
+            "map",
+            "effects",
+            "inactive_while_incapacitated",
+            "triggers",
+            "fires",
+            "once_per_turn",
+            "breaks_concentration",
+            "move_ft",
+            "drifts_ft",
+        ):
             if not data.get(key):
                 data.pop(key, None)
         return data
@@ -992,6 +1063,19 @@ class _ActivityBase(BaseModel):
                 f"area needs a template of type {sorted(_AREA_TEMPLATE_TYPES)}, "
                 f"not {self.target.template.type!r}"
             )
+        return self
+
+    @model_validator(mode="after")
+    def _only_a_placed_area_moves(self) -> _ActivityBase:
+        """An Emanation (``radius``) moves with its creature, so ``move_ft`` and
+        ``drifts_ft`` are refused on one."""
+        area = self.area
+        if (
+            area is not None
+            and (area.move_ft or area.drifts_ft)
+            and self.target.template.type == "radius"
+        ):
+            raise ValueError("area: an Emanation moves with its creature, not by move_ft/drifts_ft")
         return self
 
     @model_validator(mode="after")

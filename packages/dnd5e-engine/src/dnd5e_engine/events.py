@@ -172,6 +172,9 @@ IntentType = Literal[
     # stand it down again.
     "arm",
     "disarm",
+    # SRD 5.2 Moonbeam — "you can take a Magic action on later turns to move the
+    # Cylinder up to 60 feet" (``PersistentArea.move_ft``).
+    "move_area",
 ]
 
 
@@ -670,12 +673,32 @@ class AreaCreated(BaseModel):
 
 
 class AreaMoved(BaseModel):
-    """An anchored area followed the creature it surrounds; ``cells`` are its
-    new cells."""
+    """An anchored area followed the creature it surrounds, or a placed one was
+    moved (Moonbeam's Magic action, Cloudkill's drift); ``cells`` are its new
+    cells."""
 
     type: Literal["area_moved"] = "area_moved"
     area_id: str
     cells: list[str]
+
+
+#: The moments an area fires at a creature after it appears
+#: (``dnd5e_srd_data.schema.common.AreaTrigger``; ``created`` is the cast's own
+#: resolution and has no event of its own).
+AreaTriggerMoment = Literal["enters", "turn_start", "turn_end", "moves_within", "moved_onto"]
+
+
+class AreaTriggered(BaseModel):
+    """An area caught ``creature_id`` at one of its moments (SRD 5.2 Moonbeam:
+    "when it enters the spell's area or ends its turn there"); the activity the
+    area fires follows as ``ActivityTriggered(trigger="area")`` and its own
+    events."""
+
+    type: Literal["area_triggered"] = "area_triggered"
+    area_id: str
+    source_id: str
+    trigger: AreaTriggerMoment
+    creature_id: str
 
 
 class AreaEnded(BaseModel):
@@ -736,6 +759,8 @@ ActivityTriggerMoment = Literal[
     "casts_spell",
     "reduces_to_zero",
     "enemy_falls",
+    # an area catching a creature (``AreaTriggered`` names the moment)
+    "area",
 ]
 
 
@@ -906,6 +931,7 @@ CombatEvent = Annotated[
     | AreaTargeted
     | AreaCreated
     | AreaMoved
+    | AreaTriggered
     | AreaEnded
     | CastFailed
     | SpellCast
@@ -958,6 +984,7 @@ ALL_COMBAT_EVENT_TYPES: tuple[type[BaseModel], ...] = (
     AreaTargeted,
     AreaCreated,
     AreaMoved,
+    AreaTriggered,
     AreaEnded,
     CastFailed,
     SpellCast,
@@ -985,6 +1012,8 @@ __all__ = [
     "AreaMoved",
     "AreaShape",
     "AreaTargeted",
+    "AreaTriggerMoment",
+    "AreaTriggered",
     "AttackFailed",
     "AttackRolled",
     "CastFailed",

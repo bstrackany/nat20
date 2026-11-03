@@ -9,6 +9,17 @@
         "value": null
       },
       "applied_effects": [],
+      "area": {
+        "map": {
+          "difficult_terrain": true
+        },
+        "once_per_turn": true,
+        "triggers": [
+          "created",
+          "enters",
+          "turn_end"
+        ]
+      },
       "consumption": {
         "scaling": {
           "allowed": false,

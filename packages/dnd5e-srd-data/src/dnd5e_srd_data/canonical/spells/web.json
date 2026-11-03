@@ -13,7 +13,12 @@
         "map": {
           "difficult_terrain": true,
           "obscurement": "light"
-        }
+        },
+        "once_per_turn": true,
+        "triggers": [
+          "enters",
+          "turn_start"
+        ]
       },
       "consumption": {
         "scaling": {
@@ -25,25 +30,7 @@
       },
       "damage": {
         "on_save": "full",
-        "parts": [
-          {
-            "bonus": "",
-            "custom": {
-              "enabled": false,
-              "formula": ""
-            },
-            "denomination": 4,
-            "number": 2,
-            "scaling": {
-              "formula": "",
-              "mode": "",
-              "number": 1
-            },
-            "types": [
-              "fire"
-            ]
-          }
-        ]
+        "parts": []
       },
       "description": {
         "chat_flavor": ""
@@ -55,7 +42,17 @@
         "units": "inst",
         "value": null
       },
-      "effects": [],
+      "effects": [
+        {
+          "id": "nat20WebRestrain",
+          "level": {
+            "max": null,
+            "min": null
+          },
+          "on_save": false,
+          "riders": null
+        }
+      ],
       "flags": {},
       "id": "dnd5eactivity000",
       "img": "",
@@ -141,7 +138,22 @@
     "value": "a bit of spiderweb"
   },
   "name": "Web",
-  "passive_effects": [],
+  "passive_effects": [
+    {
+      "changes": [],
+      "description": "",
+      "disabled": false,
+      "duration": {
+        "seconds": 3600
+      },
+      "id": "nat20WebRestrain",
+      "name": "Restrained",
+      "statuses": [
+        "restrained"
+      ],
+      "transfer": false
+    }
+  ],
   "preparation": {
     "mode": "prepared",
     "prepared": false

@@ -12,7 +12,15 @@
       "area": {
         "map": {
           "lighting": "dim"
-        }
+        },
+        "move_ft": 60,
+        "once_per_turn": true,
+        "triggers": [
+          "created",
+          "enters",
+          "turn_end",
+          "moved_onto"
+        ]
       },
       "consumption": {
         "scaling": {

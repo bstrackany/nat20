@@ -411,8 +411,9 @@ counts are pinned by `packages/dnd5e-engine/tests/test_capability_matrix.py`.
   none of the four resolves an area, so `PlayerIntent.excluded_target_ids`
   sent with any of them is refused with `target_invalid`. Spirit Guardians'
   "designate creatures to be unaffected" stays unexpressed until a persistent
-  emanation's triggers are modelled (amended 2026-11-03: the Emanation itself
-  now stands on the map, `persistent_areas`; its saves are the next piece).
+  emanation's triggers are modelled (amended 2026-11-03: the Emanation stands on
+  the map and its saves fire, `persistent_areas`; the designated creatures are
+  fixed as the caster's side, `affects: enemy`, not a choice).
   (`packages/dnd5e-engine/src/dnd5e_engine/areas.py::is_choice`,
   `packages/dnd5e-engine/src/dnd5e_engine/orchestrator.py::_area_target_failure`)
 
@@ -1278,21 +1279,21 @@ zone + apply logic:
   `advance_monster_turn` has no branch that chooses any of the five C14
   actions; a monster only ever attacks, casts, moves, or flees.
   (`packages/dnd5e-engine/src/dnd5e_engine/orchestrator.py::advance_monster_turn`)
-- **Ongoing damage from an area has no producer (2026-08-26, narrowed
-  2026-09-03 C18, narrowed 2026-10-30).** An activity a spell holds for a
-  turn boundary now fires there when an effect of the cast anchors it
-  (`Activity.trigger`: Acid Arrow's lingering acid, Searing Smite's burn,
-  Weird's repeat save). Damage that depends on where a creature stands —
-  Spirit Guardians' emanation, Moonbeam, Cloud of Daggers, Stinking Cloud's
-  "Start of Turn Save" — still has none. The persistent area it needs now exists (amended
-  2026-11-03: `Activity.area`, `live.areas`, placed and anchored,
-  `docs/concepts/areas.md`); what is missing is the trigger that tests a
-  creature entering or standing in one. (Regeneration and recharge rolls
-  closed C18 — they run at the head of a driven monster turn,
-  `_run_monster_turn_start`, rather than as a registered `turn_start` hook;
-  see `docs/migration/v0.5-to-v0.6.md`.)
-  (`packages/dnd5e-engine/src/dnd5e_engine/turn_lifecycle.py`,
-  `packages/dnd5e-engine/src/dnd5e_engine/orchestrator.py::_fire_turn_triggers`)
+- **Ongoing damage from an area — closed 2026-11-03 (E2), escape checks left.**
+  An area fires its save or damage when a creature enters it, starts or ends
+  its turn in it, moves within it, or the area moves onto it
+  (`PersistentArea.triggers`, `docs/concepts/areas.md`): Spirit Guardians,
+  Moonbeam, Stinking Cloud, Spike Growth, Web, Grease, Sleet Storm, Black
+  Tentacles, Insect Plague, Cloudkill, Incendiary Cloud. Left: the "take an
+  action to make a Strength (Athletics) check" escape of Web, Entangle and
+  Black Tentacles (no intent; `escape_grapple` reads only a Grapple's stored
+  DC); Web's "while in the webs" on a push out; Stinking Cloud's lost Action
+  and Bonus Action; Spirit Guardians' halved Speed (no Speed read from an
+  effect); Incendiary Cloud's chosen drift; Flaming Sphere (no template); one
+  area firing different activities at different moments (a homebrew gap); an
+  enemy an area drops at a turn's end is missed by `enemy_falls`.
+  (`packages/dnd5e-engine/src/dnd5e_engine/persistent_areas.py`,
+  `packages/dnd5e-engine/src/dnd5e_engine/orchestrator.py::_fire_area`)
 - **Initiative has no "Delay" option.** C14 (2026-09-01) added the
   engine-rolled `d20 + DEX modifier` path (`initiative=None`) with Surprise
   and Incapacitated Disadvantage; the SRD "Delay" combat option (holding
@@ -1319,9 +1320,9 @@ zone + apply logic:
   Strike, Sunbeam, Call Lightning, Heat Metal, Vampiric Touch, Telekinesis —
   `_ACTIVITY_TRIGGERS` in the translator). The moments the vocabulary can't
   yet name still fire with the cast: a creature in an area at its turn
-  (Incendiary Cloud's "Per Turn Save", Stinking Cloud's "Start of Turn Save",
-  Tsunami's "Start of Turn Effects", Spirit Guardians' and Conjure Woodland
-  Beings' emanation saves), a numbered later round (Storm of Vengeance's
+  (Tsunami's "Start of Turn Effects", Conjure Woodland Beings' emanation save;
+  Incendiary Cloud's, Stinking Cloud's and Spirit Guardians' wait for their
+  area since 2026-11-03, `trigger.kind: area`), a numbered later round (Storm of Vengeance's
   turns 2–5), the caster's own turn end once (Earthquake's "End of Turn
   Fissures") and a bead touched or detonated (Delayed Blast Fireball). Each
   needs a persistent area or a round counter on the held use. A `later_use`

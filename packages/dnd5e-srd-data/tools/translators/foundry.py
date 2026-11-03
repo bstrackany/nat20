@@ -100,6 +100,7 @@ from dnd5e_srd_data.schema.common import (
     ActivityTriggerKind,
     ActivityTriggerSubject,
     AppliedEffectRef,
+    AreaTrigger,
     ReactionCondition,
     ReactionTriggerKind,
 )
@@ -2362,6 +2363,17 @@ _ACTIVITY_TRIGGERS: dict[tuple[str, str], ActivityTrigger] = {
     # until the end of its next turn, as a wave of lethargy washes over it." —
     # not with the cast; the host applies it when the spell ends.
     ("haste", "rBQrZnq7cHkSUAK9"): ActivityTrigger(kind=ActivityTriggerKind.LATER_USE),
+    # The activities an area fires (``PersistentArea.fires``), not the cast:
+    # "Each creature that starts its turn in the Sphere must succeed on a
+    # Constitution saving throw"
+    ("stinking-cloud", "dnd5eactivity000"): ActivityTrigger(kind=ActivityTriggerKind.AREA),
+    # "whenever the Emanation enters a creature's space and whenever a creature
+    # enters the Emanation or ends its turn there, the creature must make a
+    # Wisdom saving throw"
+    ("spirit-guardians", "dnd5eactivity000"): ActivityTrigger(kind=ActivityTriggerKind.AREA),
+    # "A creature must also make this save when the Sphere moves into its space
+    # and when it enters the Sphere or ends its turn there."
+    ("incendiary-cloud", "lLAC6qfRLaes7956"): ActivityTrigger(kind=ActivityTriggerKind.AREA),
 }
 
 
@@ -2430,6 +2442,73 @@ def _apply_effect_change_corrections(
 _EFFECT_STATUS_CORRECTIONS: dict[tuple[str, str], list[str]] = {
     ("color-spray", "DKl58EVNaSX976co"): ["blinded"],
 }
+
+
+#: ``(spell slug, activity _id)`` → condition effects the activity's own SRD 5.2
+#: sentence applies on a failed save but the pinned Foundry source carries none
+#: of (a module applied them): each is appended to the spell's
+#: ``passive_effects`` and referenced by the activity. An effect with a
+#: ``duration`` lasts at most as long as the spell's area; one without (Prone)
+#: is a condition that stands until the creature ends it.
+_ADDED_SAVE_EFFECTS: dict[tuple[str, str], PassiveEffect] = {
+    # "must succeed on a Dexterity saving throw or have the Prone condition"
+    ("grease", "dnd5eactivity000"): PassiveEffect(
+        _id="nat20GreaseProne", name="Prone", statuses=["prone"], transfer=False
+    ),
+    # "it must succeed on a Dexterity saving throw or have the Restrained
+    # condition while in the webs or until it breaks free" (1 hour, the spell's)
+    ("web", "dnd5eactivity000"): PassiveEffect(
+        _id="nat20WebRestrain",
+        name="Restrained",
+        statuses=["restrained"],
+        duration={"seconds": 3600},
+        transfer=False,
+    ),
+    # "it must succeed on a Dexterity saving throw or have the Prone condition"
+    ("sleet-storm", "dnd5eactivity000"): PassiveEffect(
+        _id="nat20SleetProne0", name="Prone", statuses=["prone"], transfer=False
+    ),
+}
+
+
+def _apply_added_save_effect_refs(slug: str, activities: list[Activity]) -> list[Activity]:
+    """Reference each ``_ADDED_SAVE_EFFECTS`` effect from its activity (applied
+    on a failed save). Copy-on-write; a ref already present is not added twice."""
+    out: list[Activity] = []
+    for act in activities:
+        added = _ADDED_SAVE_EFFECTS.get((slug, act.id))
+        refs = getattr(act, "effects", None)
+        if added is not None and refs is not None and added.id not in {r.id for r in refs}:
+            act = act.model_copy(
+                update={"effects": [*refs, AppliedEffectRef(_id=added.id, on_save=False)]}
+            )
+        out.append(act)
+    return out
+
+
+def _append_added_save_effects(slug: str, effects: list[PassiveEffect]) -> list[PassiveEffect]:
+    """Append the spell's ``_ADDED_SAVE_EFFECTS`` to its passive effects."""
+    present = {effect.id for effect in effects}
+    extra = [e for (s, _), e in _ADDED_SAVE_EFFECTS.items() if s == slug and e.id not in present]
+    return [*effects, *extra]
+
+
+#: ``(spell slug, activity _id)`` whose pinned damage is not the save's: Web's
+#: 2d4 Fire is "Any 5-foot Cube of webs exposed to fire burns away in 1 round,
+#: dealing 2d4 Fire damage to any creature that starts its turn in the fire" —
+#: not dealt by the save the webs make a creature attempt, so it is dropped.
+_DROPPED_SAVE_DAMAGE: frozenset[tuple[str, str]] = frozenset({("web", "dnd5eactivity000")})
+
+
+def _drop_save_damage(slug: str, activities: list[Activity]) -> list[Activity]:
+    """Empty the damage parts ``_DROPPED_SAVE_DAMAGE`` names. Copy-on-write."""
+    out: list[Activity] = []
+    for act in activities:
+        damage = getattr(act, "damage", None)
+        if (slug, act.id) in _DROPPED_SAVE_DAMAGE and damage is not None and damage.parts:
+            act = act.model_copy(update={"damage": damage.model_copy(update={"parts": []})})
+        out.append(act)
+    return out
 
 
 def _apply_effect_status_corrections(
@@ -2550,9 +2629,9 @@ def _apply_roll_modifiers(slug: str, activities: list[Activity]) -> list[Activit
 
 #: ``(spell or feature slug, activity _id)`` → the area the activity leaves on the
 #: map (``Activity.area``). Foundry draws these as a template or region and
-#: leaves what they do to a module, so the SRD 5.2 sentence is the source. What
-#: happens to a creature entering or standing in the area (saves, damage,
-#: Restrained) is not here.
+#: leaves what they do to a module, so the SRD 5.2 sentence is the source,
+#: including the moments the area fires its save or damage at a creature
+#: (``triggers``).
 _AREAS: dict[tuple[str, str], PersistentArea] = {
     # "The Sphere is Heavily Obscured."
     ("fog-cloud", "dnd5eactivity000"): PersistentArea(map=AreaMap(obscurement="heavy")),
@@ -2561,32 +2640,138 @@ _AREAS: dict[tuple[str, str], PersistentArea] = {
     ("darkness", "dnd5eactivity000"): PersistentArea(
         map=AreaMap(lighting="dark", obscurement="heavy")
     ),
-    # "turns it into Difficult Terrain for the duration"
-    ("grease", "dnd5eactivity000"): PersistentArea(map=AreaMap(difficult_terrain=True)),
-    # "The webs are Difficult Terrain, and the area within them is Lightly Obscured."
-    ("web", "dnd5eactivity000"): PersistentArea(
-        map=AreaMap(difficult_terrain=True, obscurement="light")
+    # "turns it into Difficult Terrain for the duration. When the grease
+    # appears, each creature standing in its area must succeed on a Dexterity
+    # saving throw or have the Prone condition. A creature that enters the area
+    # or ends its turn there must also succeed on that save or fall Prone."
+    ("grease", "dnd5eactivity000"): PersistentArea(
+        map=AreaMap(difficult_terrain=True),
+        triggers=[AreaTrigger.CREATED, AreaTrigger.ENTERS, AreaTrigger.TURN_END],
     ),
-    # "The area is Heavily Obscured ... Ground in the Cylinder is Difficult Terrain."
+    # "The webs are Difficult Terrain, and the area within them is Lightly
+    # Obscured. ... The first time a creature enters the webs on a turn or starts
+    # its turn there, it must succeed on a Dexterity saving throw or have the
+    # Restrained condition"
+    ("web", "dnd5eactivity000"): PersistentArea(
+        map=AreaMap(difficult_terrain=True, obscurement="light"),
+        triggers=[AreaTrigger.ENTERS, AreaTrigger.TURN_START],
+        once_per_turn=True,
+    ),
+    # "The area is Heavily Obscured ... Ground in the Cylinder is Difficult
+    # Terrain. When a creature enters the Cylinder for the first time on a turn
+    # or starts its turn there, it must succeed on a Dexterity saving throw or
+    # have the Prone condition and lose Concentration."
     ("sleet-storm", "dnd5eactivity000"): PersistentArea(
-        map=AreaMap(difficult_terrain=True, obscurement="heavy")
+        map=AreaMap(difficult_terrain=True, obscurement="heavy"),
+        triggers=[AreaTrigger.ENTERS, AreaTrigger.TURN_START],
+        once_per_turn=True,
+        breaks_concentration=True,
     ),
     # "these plants turn the ground in the area into Difficult Terrain"
     ("entangle", "dnd5eactivity000"): PersistentArea(map=AreaMap(difficult_terrain=True)),
-    # "The area becomes Difficult Terrain for the duration."
-    ("spike-growth", "dnd5eactivity000"): PersistentArea(map=AreaMap(difficult_terrain=True)),
-    # "The cloud is Heavily Obscured."
-    ("stinking-cloud", "b4WUwQ8fDL83FwYC"): PersistentArea(map=AreaMap(obscurement="heavy")),
-    # "Until the spell ends, Dim Light fills the Cylinder"
-    ("moonbeam", "dnd5eactivity000"): PersistentArea(map=AreaMap(lighting="dim")),
+    # "The area becomes Difficult Terrain for the duration. When a creature
+    # moves into or within the area, it takes 2d4 Piercing damage for every 5
+    # feet it travels."
+    ("spike-growth", "dnd5eactivity000"): PersistentArea(
+        map=AreaMap(difficult_terrain=True), triggers=[AreaTrigger.MOVES_WITHIN]
+    ),
+    # "The cloud is Heavily Obscured. ... Each creature that starts its turn in
+    # the Sphere must succeed on a Constitution saving throw"
+    ("stinking-cloud", "b4WUwQ8fDL83FwYC"): PersistentArea(
+        map=AreaMap(obscurement="heavy"),
+        triggers=[AreaTrigger.TURN_START],
+        fires="dnd5eactivity000",
+    ),
+    # "Until the spell ends, Dim Light fills the Cylinder, and you can take a
+    # Magic action on later turns to move the Cylinder up to 60 feet. When the
+    # Cylinder appears, each creature in it makes a Constitution saving throw.
+    # ... A creature also makes this save when the spell's area moves into its
+    # space and when it enters the spell's area or ends its turn there. A
+    # creature makes this save only once per turn."
+    ("moonbeam", "dnd5eactivity000"): PersistentArea(
+        map=AreaMap(lighting="dim"),
+        triggers=[
+            AreaTrigger.CREATED,
+            AreaTrigger.ENTERS,
+            AreaTrigger.TURN_END,
+            AreaTrigger.MOVED_ONTO,
+        ],
+        once_per_turn=True,
+        move_ft=60,
+    ),
     # "Any creature or object entirely inside the Sphere has Immunity to Thunder
     # damage ... Casting a spell that includes a Verbal component is impossible
     # there."
     ("silence", "dnd5eactivity000"): PersistentArea(
         map=AreaMap(blocks_verbal=True), effects=["kjbKMAk1y5VUyEoT"]
     ),
-    # "Protective spirits flit around you in a 15-foot Emanation for the duration."
-    ("spirit-guardians", "Rw9xP3RWH9K4eDya"): PersistentArea(),
+    # "Protective spirits flit around you in a 15-foot Emanation for the
+    # duration. ... When you cast this spell, you can designate creatures to be
+    # unaffected by it. Any other creature's Speed is halved in the Emanation,
+    # and whenever the Emanation enters a creature's space and whenever a
+    # creature enters the Emanation or ends its turn there, the creature must
+    # make a Wisdom saving throw. ... A creature makes this save only once per
+    # turn." — the designated creatures are the caster's side.
+    ("spirit-guardians", "Rw9xP3RWH9K4eDya"): PersistentArea(
+        effects=["Q3CLqX7crfusAxkj"],
+        affects="enemy",
+        triggers=[AreaTrigger.ENTERS, AreaTrigger.TURN_END, AreaTrigger.MOVED_ONTO],
+        fires="dnd5eactivity000",
+        once_per_turn=True,
+    ),
+    # "Each creature in that area makes a Strength saving throw. On a failed
+    # save, it takes 3d6 Bludgeoning damage, and it has the Restrained condition
+    # until the spell ends. A creature also makes that save if it enters the
+    # area or ends it turn there. A creature makes that save only once per
+    # turn." — "these tentacles turn the ground in that area into Difficult
+    # Terrain".
+    ("black-tentacles", "dnd5eactivity000"): PersistentArea(
+        map=AreaMap(difficult_terrain=True),
+        triggers=[AreaTrigger.CREATED, AreaTrigger.ENTERS, AreaTrigger.TURN_END],
+        once_per_turn=True,
+    ),
+    # "its area is Lightly Obscured and Difficult Terrain. When the swarm
+    # appears, each creature in it makes a Constitution saving throw ... A
+    # creature also makes this save when it enters the spell's area for the
+    # first time on a turn or ends its turn there. A creature makes this save
+    # only once per turn."
+    ("insect-plague", "dnd5eactivity000"): PersistentArea(
+        map=AreaMap(obscurement="light", difficult_terrain=True),
+        triggers=[AreaTrigger.CREATED, AreaTrigger.ENTERS, AreaTrigger.TURN_END],
+        once_per_turn=True,
+    ),
+    # "Its area is Heavily Obscured. Each creature in the Sphere makes a
+    # Constitution saving throw ... A creature must also make this save when
+    # the Sphere moves into its space and when it enters the Sphere or ends its
+    # turn there. A creature makes this save only once per turn. The Sphere
+    # moves 10 feet away from you at the start of each of your turns."
+    ("cloudkill", "dnd5eactivity000"): PersistentArea(
+        map=AreaMap(obscurement="heavy"),
+        triggers=[
+            AreaTrigger.CREATED,
+            AreaTrigger.ENTERS,
+            AreaTrigger.TURN_END,
+            AreaTrigger.MOVED_ONTO,
+        ],
+        once_per_turn=True,
+        drifts_ft=10,
+    ),
+    # "The cloud's area is Heavily Obscured. ... When the cloud appears, each
+    # creature in it makes a Dexterity saving throw ... A creature must also
+    # make this save when the Sphere moves into its space and when it enters
+    # the Sphere or ends its turn there. A creature makes this save only once
+    # per turn." Its drift is "in a direction you choose", so it isn't set.
+    ("incendiary-cloud", "Hhw0octbLetO5Nsi"): PersistentArea(
+        map=AreaMap(obscurement="heavy"),
+        triggers=[
+            AreaTrigger.CREATED,
+            AreaTrigger.ENTERS,
+            AreaTrigger.TURN_END,
+            AreaTrigger.MOVED_ONTO,
+        ],
+        fires="lLAC6qfRLaes7956",
+        once_per_turn=True,
+    ),
     # "You radiate a protective, unseeable aura in a 10-foot Emanation that
     # originates from you. The aura is inactive while you have the Incapacitated
     # condition. You and your allies in the aura gain a bonus to saving throws"
@@ -2722,28 +2907,37 @@ def translate_spell_yaml(
         duration=_spell_duration(system.get("duration") or {}),
         materials=_spell_materials(system.get("materials") or {}),
         preparation=_spell_preparation(system.get("preparation") or {}),
-        activities=_apply_areas(
+        activities=_drop_save_damage(
             slug,
-            _apply_activity_effect_ref_corrections(
+            _apply_added_save_effect_refs(
                 slug,
-                _apply_activity_triggers(
+                _apply_areas(
                     slug,
-                    _apply_affects_corrections(
+                    _apply_activity_effect_ref_corrections(
                         slug,
-                        _apply_spell_save_cover_overrides(
+                        _apply_activity_triggers(
                             slug,
-                            _apply_spell_damage_type_corrections(
-                                slug, _translate_activities(system)
+                            _apply_affects_corrections(
+                                slug,
+                                _apply_spell_save_cover_overrides(
+                                    slug,
+                                    _apply_spell_damage_type_corrections(
+                                        slug, _translate_activities(system)
+                                    ),
+                                ),
                             ),
                         ),
                     ),
                 ),
             ),
         ),
-        passive_effects=_apply_effect_endings(
+        passive_effects=_append_added_save_effects(
             slug,
-            _apply_effect_status_corrections(
-                slug, _apply_effect_change_corrections(slug, _passive_effects(doc))
+            _apply_effect_endings(
+                slug,
+                _apply_effect_status_corrections(
+                    slug, _apply_effect_change_corrections(slug, _passive_effects(doc))
+                ),
             ),
         ),
         provenance=_provenance(yaml_path, ingest_date, ingest_version),
