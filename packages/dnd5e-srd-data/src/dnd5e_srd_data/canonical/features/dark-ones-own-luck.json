@@ -55,6 +55,13 @@
         "prompt": false,
         "visible": false
       },
+      "roll_modifier": {
+        "applies_to": [
+          "check",
+          "save"
+        ],
+        "mode": "roll"
+      },
       "sort": 0,
       "target": {
         "affects": {

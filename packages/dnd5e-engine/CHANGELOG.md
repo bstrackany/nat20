@@ -16,6 +16,42 @@ caster takes. Requires the matching `dnd5e-srd-data`.
 
 ### Added
 
+- **Features that change a D20 Test after the roll.** `Interrupts` gains its
+  second method, `before_d20_outcome(D20Outcome) -> D20Outcome`: a D20 Test
+  rolled and not yet decided (kind, roller, opposer, natural, total, AC or DC,
+  success so far, Advantage mode and the die not kept). It is asked at the one
+  comparison point of each resolver: `activities/attack.py` (and Cleave's
+  attack; `_settle_d20`, after a redeemed Bardic Inspiration die),
+  `save_primitive.roll_save` (before a Legendary Resistance) and
+  `activities/check.py` (a check with a DC); each keeps what comes back, and
+  `AttackRolled` / `SaveRolled` / `CheckRolled` carry the changed natural and
+  total. The orchestrator's `_ArmedInterrupts` rerolls a natural 1 of a
+  creature whose feature or feat carries Halfling Luck's flag (SRD 5.2 Luck:
+  "you can reroll the die, and you must use the new roll"; free and always
+  taken), then fires the first armed `roll_modifier` activity
+  (`dnd5e-srd-data`, unreleased) that answers the roll, by initiative and then
+  arming order, one per roll: Stroke of Luck turns a failed D20 Test into a 20,
+  Indomitable rerolls a failed save with its Fighter-level bonus, Dark One's
+  Own Luck adds 1d10 to a check or save, Cutting Words subtracts the Bardic
+  Inspiration die from an enemy's attack or check within 60 ft that it can
+  see. It fires only when it helps a failing roll of its owner or an ally (or
+  hinders a succeeding roll of an enemy) and its best result would turn the
+  outcome, so automation is never worse than leaving it: a die that then rolls
+  too low is spent. It spends its own feature's use, or the other feature's its
+  consumption names (`feat:bardic-inspiration`), and the Reaction when it is
+  one (`ReactionTriggered`). New event `D20TestChanged` (before the roll's own
+  event); new module `roll_modifiers.py` (the pure policy);
+  `D20Result.dropped` (the die not kept). Such a feature is armed like a
+  reaction, on the new queue trigger `d20_test` (`arm`,
+  `PartyMemberSpec.armed_reactions`), and re-armed at its owner's turn start.
+  Dice: a reroll's d20, then the activity's own roll, from the combat's RNG at
+  that moment, after the roll's own dice and before any damage; a combat with
+  no armed modifier and no Luck keeps its seed stream.
+- **`missed_by_attack` reactions.** A reaction armed on "When a creature misses
+  you with an attack roll" (`ReactionTriggerKind.MISSED_BY_ATTACK`, a
+  consumer's own) fires after the resolution with the miss, against the
+  attacker (`_fire_resolution_triggers`).
+
 - **Reactions that reduce damage.** An armed reaction whose activity carries
   `damage_reduction` (`dnd5e-srd-data`, unreleased) fires as the damage it
   answers lands, not before the attack: SRD 5.2 Uncanny Dodge halves an attack
@@ -196,6 +232,15 @@ caster takes. Requires the matching `dnd5e-srd-data`.
   Vampiric Touch's and Telekinesis's repeats are `later_use` and not resolved
   (the engine does not re-fire them). A host that read the later damage from the cast's events reads it
   from the later turn's instead.
+
+### Fixed
+
+- **Arming order with an ineligible first entry.** `_pop_pending_reaction` took
+  only a reactor's first armed entry for a trigger and skipped the reactor when
+  that entry could not fire, so Shield armed first with no slot left kept an
+  Uncanny Dodge armed behind it from firing, and a reduction armed first kept
+  Shield from ever firing. Each of the reactor's entries is now tried in
+  arming order and the first eligible fires.
 
 ## [0.7.0]
 

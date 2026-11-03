@@ -45,6 +45,12 @@
         "prompt": false,
         "visible": false
       },
+      "roll_modifier": {
+        "applies_to": [
+          "save"
+        ],
+        "mode": "reroll"
+      },
       "sort": 0,
       "target": {
         "affects": {

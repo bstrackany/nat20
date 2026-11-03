@@ -65,18 +65,20 @@ import logging
 import re
 from collections import defaultdict
 from dataclasses import replace
+from functools import partial
 from typing import TYPE_CHECKING, Final, Literal
 
 from dnd5e_srd_data.schema.item import WeaponProperty
 from dnd5e_srd_data.schema.monster import MonsterTraitMechanic
 
 from dnd5e_engine.activities.apply import apply_damage
-from dnd5e_engine.activities.d20 import AdvantageSources, roll_d20_test
+from dnd5e_engine.activities.d20 import AdvantageSources, D20Result, roll_d20_test
 from dnd5e_engine.activities.dice import roll_damage_part, roll_expr
 from dnd5e_engine.activities.effects import apply_activity_effects
 from dnd5e_engine.activities.formula import resolve_damage_block, resolve_roll_data
 from dnd5e_engine.activities.mastery import apply_mastery_on_hit, apply_mastery_on_miss
 from dnd5e_engine.events import AdvantageMode, AdvantageSource, AttackRolled
+from dnd5e_engine.interrupts import D20Outcome
 from dnd5e_engine.rules.conditions import (
     active_condition_names,
     conditions_auto_crit_within_5ft,
@@ -237,6 +239,9 @@ def resolve_attack(
             is_crit, is_hit = _resolve_hit_outcome(
                 natural, total, effective_ac, activity, auto_crit_on_hit=auto_crit
             )
+        natural, total, is_crit, is_hit = _settle_d20(
+            ctx, activity, target.entity_id, roll, natural, total, effective_ac, auto_crit
+        )
 
         ctx.event_emitter(
             AttackRolled(
@@ -248,7 +253,7 @@ def resolve_attack(
                 is_hit=is_hit,
                 is_opportunity_attack=ctx.is_opportunity_attack,
                 attack_type=_attack_type_of(activity),
-                natural=roll.kept,
+                natural=natural,
                 modifier=attack_bonus,
                 sources=list(roll.sources),
                 advantage_sources=list(sources.advantage),
@@ -385,6 +390,9 @@ def _resolve_cleave_chain(
     is_crit, is_hit = _resolve_hit_outcome(
         roll.kept, total, effective_ac, activity, auto_crit_on_hit=auto_crit
     )
+    natural, total, is_crit, is_hit = _settle_d20(
+        ctx, activity, cid, roll, roll.kept, total, effective_ac, auto_crit
+    )
     ctx.event_emitter(
         AttackRolled(
             attacker_id=ctx.caster.entity_id,
@@ -395,7 +403,7 @@ def _resolve_cleave_chain(
             is_hit=is_hit,
             is_opportunity_attack=ctx.is_opportunity_attack,
             attack_type=_attack_type_of(activity),
-            natural=roll.kept,
+            natural=natural,
             modifier=attack_bonus,
             sources=list(roll.sources),
             advantage_sources=list(sources.advantage),
@@ -927,6 +935,58 @@ def _resolve_flat_bonus(
 
 
 # ── natural d20 + hit/crit/miss ──────────────────────────────────────────────
+
+
+def _settle_d20(
+    ctx: ActivityResolutionContext,
+    activity: AttackActivity,
+    target_id: str,
+    roll: D20Result,
+    natural: int,
+    total: int,
+    effective_ac: int,
+    auto_crit: bool,
+) -> tuple[int, int, bool, bool]:
+    """The attack roll that stands, as ``(natural, total, is_crit, is_hit)``.
+
+    SRD 5.2 Stroke of Luck: "If you fail a D20 Test, you can turn the roll into a
+    20"; Cutting Words: "subtract the number rolled from the creature's roll ...
+    potentially turning the success into a failure". ``ctx.interrupts`` may
+    change the roll after it is rolled and before it hits or misses
+    (``interrupts.D20Outcome``); hit and critical hit are then decided again
+    from the roll that stands, by the same rule (a natural 1 misses, a natural
+    20 hits)."""
+    rule = partial(_hits, target_ac=effective_ac, activity=activity, auto_crit=auto_crit)
+    is_hit = rule(natural, total)
+    before = D20Outcome(
+        kind="attack",
+        roller_id=ctx.caster.entity_id,
+        opposer_id=target_id,
+        natural=natural,
+        total=total,
+        target=effective_ac,
+        succeeded=is_hit,
+        mode=roll.mode,
+        dropped=roll.dropped,
+        rule=rule,
+    )
+    after = ctx.interrupts.before_d20_outcome(before)
+    crit = after.succeeded and rule(after.natural, after.total, crit=True)
+    return after.natural, after.total, crit, after.succeeded
+
+
+def _hits(
+    natural: int,
+    total: int,
+    *,
+    target_ac: int,
+    activity: AttackActivity,
+    auto_crit: bool,
+    crit: bool = False,
+) -> bool:
+    """``_resolve_hit_outcome``'s hit (or, with ``crit``, its critical hit)."""
+    outcome = _resolve_hit_outcome(natural, total, target_ac, activity, auto_crit_on_hit=auto_crit)
+    return outcome[0] if crit else outcome[1]
 
 
 def _forced_d20(ctx: ActivityResolutionContext, target_index: int) -> int | None:

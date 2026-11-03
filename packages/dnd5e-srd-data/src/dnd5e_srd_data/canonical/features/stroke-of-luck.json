@@ -55,6 +55,15 @@
         "prompt": false,
         "visible": false
       },
+      "roll_modifier": {
+        "applies_to": [
+          "attack",
+          "save",
+          "check"
+        ],
+        "mode": "set",
+        "value": 20
+      },
       "sort": 0,
       "target": {
         "affects": {

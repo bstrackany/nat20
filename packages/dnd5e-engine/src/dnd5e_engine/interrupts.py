@@ -11,10 +11,12 @@ It rides on the activity context (``ActivityResolutionContext.interrupts``), so
 the pure resolvers ask it without importing the orchestrator, which builds the
 live one from what each creature keeps armed. The default interrupts nothing.
 
-Today it has one moment, ``before_damage_applied``: damage about to land on a
+It has two moments. ``before_damage_applied``: damage about to land on a
 creature, after it is rolled and before Resistance, Vulnerability and Immunity
-fold in (``activities/apply.py``). A moment for a d20 roll before its outcome is
-decided belongs on the same object.
+fold in (``activities/apply.py``). ``before_d20_outcome``: a D20 Test rolled and
+not yet decided (``activities/attack.py``, ``save_primitive.py``, ``check.py``),
+which a feature may change "after seeing the roll but before any of the roll's
+effects occur" (SRD 5.2 Dark One's Own Luck); see ``roll_modifiers.py``.
 
 The helpers below are the pure half of a damage reduction (which reduction an
 activity carries, whether it answers this damage, the reduced amounts); firing
@@ -23,16 +25,17 @@ one (spending the Reaction and the use) is the orchestrator's.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from dnd5e_srd_data.schema.common import DamageReductionMode
 
 if TYPE_CHECKING:
-    from dnd5e_srd_data.schema.common import DamageReduction
+    from dnd5e_srd_data.schema.common import D20TestKind, DamageReduction
 
     from dnd5e_engine.activities.context import ActivityResolutionContext
+    from dnd5e_engine.events import AdvantageMode
 
 
 @dataclass(frozen=True)
@@ -47,6 +50,32 @@ class IncomingDamage:
     attack_hit: bool = False
 
 
+@dataclass(frozen=True)
+class D20Outcome:
+    """A D20 Test rolled and not yet decided: ``roller_id`` rolled ``natural``
+    for ``total`` against ``target`` (the AC or DC) and ``succeeded`` so far.
+    ``opposer_id`` is the creature on the other side (the attack's target, the
+    creature that forced the save or the check; ``""`` for none). ``mode`` and
+    ``dropped`` (the die not kept) are the roll's Advantage or Disadvantage.
+    ``rule`` decides success from a natural and a total — an attack's natural 1
+    misses and its natural 20 hits — and is ``total >= target`` when ``None``."""
+
+    kind: D20TestKind
+    roller_id: str
+    opposer_id: str
+    natural: int
+    total: int
+    target: int
+    succeeded: bool
+    mode: AdvantageMode = "normal"
+    dropped: int | None = None
+    rule: Callable[[int, int], bool] | None = None
+
+    def succeeds(self, natural: int, total: int) -> bool:
+        """Would this roll succeed showing ``natural`` for ``total``?"""
+        return self.rule(natural, total) if self.rule is not None else total >= self.target
+
+
 class Interrupts:
     """What an activity resolution asks before an outcome stands. This default
     changes nothing; the orchestrator passes one that fires armed reactions."""
@@ -54,6 +83,10 @@ class Interrupts:
     def before_damage_applied(self, incoming: IncomingDamage) -> dict[str, int]:
         """The amounts per damage type that land instead of ``incoming.by_type``."""
         return dict(incoming.by_type)
+
+    def before_d20_outcome(self, outcome: D20Outcome) -> D20Outcome:
+        """The roll that stands instead of ``outcome``."""
+        return outcome
 
 
 def reduction_activity(source: Any, activity_id: str | None) -> Any | None:

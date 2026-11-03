@@ -68,6 +68,8 @@ from dnd5e_srd_data import (
     RangeUnits,
     RecoveryRule,
     ReviewState,
+    RollModifier,
+    RollModifierMode,
     SaveActivity,
     SavingThrowProficiencies,
     Senses,
@@ -2500,6 +2502,50 @@ _DAMAGE_REDUCTIONS: dict[tuple[str, str], DamageReduction] = {
 }
 
 
+#: ``(feature slug, activity _id)`` → what the activity does to a D20 Test after
+#: the roll, before its outcome (``Activity.roll_modifier``). Foundry leaves the
+#: roll to the player, so the SRD 5.2 sentence is the source.
+_ROLL_MODIFIERS: dict[tuple[str, str], RollModifier] = {
+    # "When a creature that you can see within 60 feet of yourself makes a damage
+    # roll or succeeds on an ability check or attack roll, you can take a
+    # Reaction to expend one use of your Bardic Inspiration; roll your Bardic
+    # Inspiration die, and subtract the number rolled from the creature's roll"
+    ("cutting-words", "dnd5eactivity000"): RollModifier(
+        mode=RollModifierMode.ROLL,
+        applies_to=["attack", "check"],
+        whose=["enemy"],
+        within_ft=60,
+        seen=True,
+    ),
+    # "When you make an ability check or a saving throw, you can use this
+    # feature to add 1d10 to your roll. You can do so after seeing the roll"
+    ("dark-ones-own-luck", "4A1lkH3i3azHU1YQ"): RollModifier(
+        mode=RollModifierMode.ROLL, applies_to=["check", "save"]
+    ),
+    # "If you fail a saving throw, you can reroll it with a bonus equal to your
+    # Fighter level ... You must use the new roll"
+    ("indomitable", "84EBzlT1nDmNqhqM"): RollModifier(
+        mode=RollModifierMode.REROLL, applies_to=["save"]
+    ),
+    # "If you fail a D20 Test, you can turn the roll into a 20."
+    ("stroke-of-luck", "y4PG8Ow1eNEle580"): RollModifier(
+        mode=RollModifierMode.SET, applies_to=["attack", "save", "check"], value=20
+    ),
+}
+
+
+def _apply_roll_modifiers(slug: str, activities: list[Activity]) -> list[Activity]:
+    """Set each activity's ``roll_modifier`` from ``_ROLL_MODIFIERS``.
+    Copy-on-write like ``_apply_damage_reductions``."""
+    out: list[Activity] = []
+    for act in activities:
+        modifier = _ROLL_MODIFIERS.get((slug, act.id))
+        if modifier is not None:
+            act = act.model_copy(update={"roll_modifier": modifier})
+        out.append(act)
+    return out
+
+
 def _apply_damage_reductions(slug: str, activities: list[Activity]) -> list[Activity]:
     """Set each activity's ``damage_reduction`` from ``_DAMAGE_REDUCTIONS``.
     Copy-on-write like ``_apply_activity_triggers``."""
@@ -3336,7 +3382,9 @@ def translate_feature_yaml(
         feature_type=feature_type,
         foundry_id=str(doc.get("_id") or ""),
         source_slug=source_slug,
-        activities=_apply_damage_reductions(slug, _translate_activities(system)),
+        activities=_apply_roll_modifiers(
+            slug, _apply_damage_reductions(slug, _translate_activities(system))
+        ),
         passive_effects=_passive_effects(doc),
         advancement=_advancement(system),
         uses=_feature_uses(system),

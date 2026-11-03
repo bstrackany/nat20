@@ -56,6 +56,7 @@ from dnd5e_engine.activities.dice import roll_expr
 from dnd5e_engine.activities.effects import apply_activity_effects
 from dnd5e_engine.activities.formula import resolve_roll_data
 from dnd5e_engine.events import Ability, AdvantageSource, CheckRolled
+from dnd5e_engine.interrupts import D20Outcome
 from dnd5e_engine.rules.skills import SKILL_CODE_TO_SLUG
 
 if TYPE_CHECKING:
@@ -125,6 +126,7 @@ def resolve_check(activity: CheckActivity, ctx: ActivityResolutionContext) -> No
     roll = _roll_d20(ctx, actor, modifier, ability=ability)
     total = roll.total
     succeeded = (total >= dc) if dc is not None else None
+    natural, total, succeeded = _settle_d20(ctx, actor, roll, total, dc, succeeded)
 
     ctx.event_emitter(
         CheckRolled(
@@ -135,7 +137,7 @@ def resolve_check(activity: CheckActivity, ctx: ActivityResolutionContext) -> No
             roll_total=total,
             succeeded=succeeded,
             advantage=roll.mode,
-            natural=roll.kept,
+            natural=natural,
             modifier=roll.modifier,
             sources=list(roll.sources),
         )
@@ -146,6 +148,38 @@ def resolve_check(activity: CheckActivity, ctx: ActivityResolutionContext) -> No
     # inert (``save_succeeded=None`` applies unconditionally).
     cast_level = ctx.slot_level or ctx.base_spell_level or 0
     apply_activity_effects(activity, ctx, actor, save_succeeded=None, cast_level=cast_level)
+
+
+def _settle_d20(
+    ctx: ActivityResolutionContext,
+    actor: Combatant,
+    roll: D20Result,
+    total: int,
+    dc: int | None,
+    succeeded: bool | None,
+) -> tuple[int, int, bool | None]:
+    """The check that stands, as ``(natural, total, succeeded)``. SRD 5.2 Dark
+    One's Own Luck: "When you make an ability check or a saving throw, you can
+    use this feature to add 1d10 to your roll. You can do so after seeing the
+    roll but before any of the roll's effects occur." ``ctx.interrupts`` may
+    change a check against a DC (``interrupts.D20Outcome``); the caster that
+    imposed it is the opposer, none for the caster's own check. A check with no
+    DC has no outcome to change."""
+    if dc is None or succeeded is None:
+        return roll.kept, total, succeeded
+    before = D20Outcome(
+        kind="check",
+        roller_id=actor.entity_id,
+        opposer_id="" if actor is ctx.caster else ctx.caster.entity_id,
+        natural=roll.kept,
+        total=total,
+        target=dc,
+        succeeded=succeeded,
+        mode=roll.mode,
+        dropped=roll.dropped,
+    )
+    after = ctx.interrupts.before_d20_outcome(before)
+    return after.natural, after.total, after.succeeded
 
 
 # ── DC resolution ─────────────────────────────────────────────────────────────

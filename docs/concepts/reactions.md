@@ -66,8 +66,10 @@ A host that knows what a PC keeps armed lists it on the spec instead:
 `PartyMemberSpec.armed_reactions=("uncanny-dodge", "shield")` seeds the same
 standing reactions at `start_combat`, so a wizard who lost initiative still has
 Shield in round 1. The order is the priority: when two armed reactions answer
-one trigger, the first listed (or first armed) fires and the other waits for
-the next occurrence; that order survives the turn-start re-arming.
+one trigger, the first listed (or first armed) that can fire does (an armed
+Shield with no slot left gives way to the Uncanny Dodge behind it) and the
+other waits for the next occurrence; that order survives the turn-start
+re-arming.
 
 ## Reactions that reduce damage
 
@@ -103,6 +105,58 @@ The engine asks this through `ActivityResolutionContext.interrupts`
 (`dnd5e_engine.interrupts.Interrupts`), one object an activity resolution
 consults before an outcome stands. Its default interrupts nothing.
 
+## Features that change a d20 roll
+
+Some features act between a d20 roll and its outcome. SRD 5.2 Dark One's Own
+Luck: "you can use this feature to add 1d10 to your roll. You can do so after
+seeing the roll but before any of the roll's effects occur." A feature or feat
+activity carrying `roll_modifier` (`dnd5e-srd-data`) is armed like a
+reaction — `"arm"` or `PartyMemberSpec.armed_reactions`, on the queue trigger
+`d20_test` — whether or not it takes a Reaction, and the engine asks
+`Interrupts.before_d20_outcome` at each attack roll, saving throw and ability
+check against a DC, after the roll and before its outcome (and before a
+Legendary Resistance).
+
+| `mode` | Does | SRD 5.2 |
+|---|---|---|
+| `"roll"` | adds the activity's own roll to its owner's or an ally's roll, subtracts it from an enemy's | Dark One's Own Luck, Cutting Words |
+| `"reroll"` | rerolls the d20 (one die under Advantage or Disadvantage), with the activity's roll as a bonus | Indomitable |
+| `"set"` | turns the d20 into `value` | Stroke of Luck (20) |
+| `"succeed"` | turns a failure into a success | (a consumer's own content) |
+
+`applies_to` names the rolls it answers (`attack`, `save`, `check`), `whose`
+the roller (`self`, `ally`, `enemy`), `within_ft` and `seen` how near and in
+sight another roller must be. Nothing asks the player, so one policy decides,
+chosen so that firing is never worse than not firing:
+
+- it answers only a failing roll of its owner or an ally, or a succeeding roll
+  of an enemy (Cutting Words never lowers an ally's roll);
+- it fires only when its best result turns the outcome: Stroke of Luck on a
+  save that a 20 would pass, Cutting Words on a hit its largest die would turn
+  into a miss (never a natural 20). A die that then rolls too low is spent, as
+  at the table;
+- one per roll: the first armed that answers, in initiative order and then
+  arming order.
+
+Firing spends the feature's use, or the other feature's its consumption names
+(Cutting Words spends Bardic Inspiration), and the Reaction when it takes one
+(`ReactionTriggered`). `D20TestChanged` reports the change before the roll's
+own `AttackRolled` / `SaveRolled` / `CheckRolled`, which carries the new
+numbers. A reroll's d20, then the activity's own roll, are drawn from the
+combat's seeded RNG at that moment.
+
+Halfling Luck needs no arming: "When you roll a 1 on the d20 of a D20 Test,
+you can reroll the die, and you must use the new roll" costs nothing, so a
+creature whose feature or feat carries its flag rerolls every natural 1 at
+these three points, before any armed modifier.
+
+Not covered: death saves, the concentration check and the end-of-turn repeat
+save (resolved outside the activity resolvers), damage rolls (Cutting Words'
+other use), Advantage or Disadvantage imposed on another creature's roll, and
+a Portent-style replacement chosen before the roll, and a spell carrying
+`roll_modifier`. Shield still fires before the attack roll it answers, with
+its +5 folded into that comparison (the design note linked at the end).
+
 ## Recognized triggers
 
 `PlayerIntent.reaction_trigger` accepts a closed set:
@@ -110,6 +164,8 @@ consults before an outcome stands. Its default interrupts nothing.
 | Trigger | Fires when |
 |---|---|
 | `"hit_by_attack"` | The reactor is hit by an attack (Shield) |
+| `"missed_by_attack"` | An attack roll against the reactor misses (a consumer's own reaction); fires after that resolution |
+| `"d20_test"` | A D20 Test is rolled and not yet decided (a `roll_modifier` feature; armed with `"arm"`) |
 | `"cast_spell"` | Another creature casts a spell (Counterspell) |
 | `"targeted_by_magic_missile"` | The reactor is targeted by Magic Missile |
 

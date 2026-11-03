@@ -33,7 +33,7 @@ MIRRORS, does not import from, ``effects/save.py``:
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Final
 
 import d20
@@ -41,6 +41,7 @@ from dnd5e_srd_data.schema.monster import MonsterTraitMechanic
 
 from dnd5e_engine.activities.d20 import AdvantageSources, D20Result, roll_d20_test
 from dnd5e_engine.events import AdvantageMode, AdvantageSource
+from dnd5e_engine.interrupts import D20Outcome
 from dnd5e_engine.spatial import cover_bonus
 
 if TYPE_CHECKING:
@@ -153,15 +154,49 @@ def roll_save(
     return _convert_if_legendary_resistance_armed(
         ctx,
         target,
-        SaveRoll(
-            total=total,
-            succeeded=total >= dc,
-            natural=roll.kept,
-            modifier=roll.modifier,
-            mode=roll.mode,
-            sources=roll.sources,
+        _settle_d20(
+            ctx,
+            target,
+            dc,
+            roll.dropped,
+            SaveRoll(
+                total=total,
+                succeeded=total >= dc,
+                natural=roll.kept,
+                modifier=roll.modifier,
+                mode=roll.mode,
+                sources=roll.sources,
+            ),
         ),
     )
+
+
+def _settle_d20(
+    ctx: ActivityResolutionContext, target: Combatant, dc: int, dropped: int | None, roll: SaveRoll
+) -> SaveRoll:
+    """The save that stands. SRD 5.2 Indomitable: "If you fail a saving throw,
+    you can reroll it with a bonus equal to your Fighter level". After the roll
+    and before its outcome (and before a Legendary Resistance turns a failure
+    into a success), ``ctx.interrupts`` may change it
+    (``interrupts.D20Outcome``); the creature that forced the save is the
+    opposer. An unchanged roll comes back as it was."""
+    if roll.natural is None:
+        return roll
+    before = D20Outcome(
+        kind="save",
+        roller_id=target.entity_id,
+        opposer_id=ctx.caster.entity_id,
+        natural=roll.natural,
+        total=roll.total,
+        target=dc,
+        succeeded=roll.succeeded,
+        mode=roll.mode,
+        dropped=dropped,
+    )
+    after = ctx.interrupts.before_d20_outcome(before)
+    if after is before:
+        return roll
+    return replace(roll, natural=after.natural, total=after.total, succeeded=after.succeeded)
 
 
 def _convert_if_legendary_resistance_armed(

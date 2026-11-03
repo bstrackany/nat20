@@ -177,6 +177,9 @@ class ReactionTriggerKind(StrEnum):
     TAKES_DAMAGE = "takes_damage"
     # Hellish Rebuke — "taking damage from a creature that you can see"
     CREATURE_FALLS = "creature_falls"  # Feather Fall — "you or a creature you can see … falls"
+    # A consumer's own reaction (no SRD 5.2 one): "When a creature misses you
+    # with an attack roll"
+    MISSED_BY_ATTACK = "missed_by_attack"
 
 
 class ActivityTriggerKind(StrEnum):
@@ -324,6 +327,75 @@ class DamageReduction(BaseModel, frozen=True):
             if not data.get(key):
                 data.pop(key, None)
         return data
+
+
+#: The three D20 Tests (SRD 5.2 "D20 Tests": "ability checks, saving throws, and
+#: attack rolls").
+D20TestKind = Literal["attack", "save", "check"]
+
+
+class RollModifierMode(StrEnum):
+    """What an activity does to a D20 Test after it is rolled and before its
+    outcome stands."""
+
+    # Cutting Words — "roll your Bardic Inspiration die, and subtract the number
+    # rolled from the creature's roll"; Dark One's Own Luck — "add 1d10 to your
+    # roll". The activity's own ``roll``, added to the roll of its owner or an
+    # ally, subtracted from an enemy's.
+    ROLL = "roll"
+    # Indomitable — "you can reroll it with a bonus equal to your Fighter level.
+    # You must use the new roll". The bonus is the activity's own ``roll``, if any.
+    REROLL = "reroll"
+    # Stroke of Luck — "If you fail a D20 Test, you can turn the roll into a 20"
+    SET = "set"
+    # A homebrew "turn a failed saving throw into a success"
+    SUCCEED = "succeed"
+
+
+#: Whose roll a modifier answers, seen from the creature that has it.
+RollModifierWhose = Literal["self", "ally", "enemy"]
+
+
+def _own_roll() -> list[RollModifierWhose]:
+    return ["self"]
+
+
+class RollModifier(BaseModel, frozen=True):
+    """An activity that changes a D20 Test after the roll, before its outcome.
+
+    ``applies_to`` names the D20 Tests it answers (Indomitable: saving throws;
+    Cutting Words: "an ability check or attack roll"); ``whose`` the roller
+    (``self`` by default; Cutting Words' "a creature" is marked ``enemy``, the
+    only roll it is worth lowering). ``within_ft`` and ``seen`` narrow another
+    creature's roll to one within that many feet the owner can see (Cutting
+    Words: "a creature that you can see within 60 feet of yourself"). ``value``
+    is the number a ``set`` turns the d20 into (Stroke of Luck: 20). The
+    defaults are left out of a dump.
+    """
+
+    mode: RollModifierMode
+    applies_to: list[D20TestKind] = Field(min_length=1)
+    whose: list[RollModifierWhose] = Field(default_factory=_own_roll, min_length=1)
+    within_ft: int | None = Field(default=None, gt=0)
+    seen: bool = False
+    value: int | None = Field(default=None, ge=1, le=20)
+
+    @model_serializer(mode="wrap")
+    def _without_defaults(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        data: dict[str, Any] = handler(self)
+        if data.get("whose") == ["self"]:
+            data.pop("whose", None)
+        for key in ("within_ft", "seen", "value"):
+            if not data.get(key):
+                data.pop(key, None)
+        return data
+
+    @model_validator(mode="after")
+    def _set_has_a_value(self) -> RollModifier:
+        """A ``set`` needs the number it sets, and only a ``set`` has one."""
+        if (self.mode is RollModifierMode.SET) != (self.value is not None):
+            raise ValueError("roll_modifier: 'value' goes with mode 'set', and only with it")
+        return self
 
 
 class ReactionCondition(BaseModel, frozen=True):
@@ -797,6 +869,10 @@ class _ActivityBase(BaseModel):
     #: ``None`` (Foundry has no field for it) everywhere else; left out of a
     #: dump when ``None``.
     damage_reduction: DamageReduction | None = None
+    #: An activity that changes a D20 Test after the roll (``RollModifier``).
+    #: ``None`` (Foundry has no field for it) everywhere else; left out of a
+    #: dump when ``None``.
+    roll_modifier: RollModifier | None = None
 
     model_config = {"populate_by_name": True}
 
@@ -807,6 +883,8 @@ class _ActivityBase(BaseModel):
             data.pop("trigger", None)
         if data.get("damage_reduction") is None:
             data.pop("damage_reduction", None)
+        if data.get("roll_modifier") is None:
+            data.pop("roll_modifier", None)
         return data
 
     @model_validator(mode="after")
@@ -817,6 +895,17 @@ class _ActivityBase(BaseModel):
         rolls = reduction is not None and reduction.mode is DamageReductionMode.ROLL
         if rolls and getattr(self, "healing", None) is None:
             raise ValueError("damage_reduction mode 'roll' needs a heal activity's healing")
+        return self
+
+    @model_validator(mode="after")
+    def _roll_modifier_roll_has_a_roll(self) -> _ActivityBase:
+        """A ``roll`` modifier adds or subtracts the activity's own ``roll``, so
+        only an activity with a roll formula can carry one."""
+        modifier = self.roll_modifier
+        rolls = modifier is not None and modifier.mode is RollModifierMode.ROLL
+        roll = getattr(self, "roll", None)
+        if rolls and not (roll is not None and roll.formula):
+            raise ValueError("roll_modifier mode 'roll' needs the activity's roll formula")
         return self
 
 

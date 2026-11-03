@@ -9,6 +9,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`Activity.roll_modifier`** (`RollModifier`: `mode` `roll` / `reroll` /
+  `set` / `succeed`, `applies_to` attack / save / check, `whose` self / ally /
+  enemy, `within_ft`, `seen`, `value`) — an activity that changes a D20 Test
+  after the roll and before its outcome. `roll` adds or subtracts the
+  activity's own `roll` formula, so only an activity with one may carry it;
+  `reroll` adds that formula as a bonus when there is one; `set` needs
+  `value` (and only `set` has one); `succeed` is a consumer's own "turn a
+  failed save into a success". Left out of a dump when unset (and `whose`
+  when `["self"]`, `within_ft` / `seen` / `value` when unset). The translator
+  sets it from `_ROLL_MODIFIERS` on four SRD 5.2 features: Cutting Words
+  (`roll`, an enemy's attack or check, within 60 ft, seen), Dark One's Own
+  Luck (`roll`, own check or save), Indomitable (`reroll`, own save) and
+  Stroke of Luck (`set` 20, any own D20 Test). Canonical: those four features
+  changed. New exports `RollModifier`, `RollModifierMode`, `RollModifierWhose`,
+  `D20TestKind`.
+- **`ReactionTriggerKind.MISSED_BY_ATTACK`** ("When a creature misses you with
+  an attack roll") for a consumer's own reactions; no SRD 5.2 text has it, so
+  the translator types nothing new.
+
 - **`Activity.damage_reduction`** (`DamageReduction`: `mode` `halve` / `roll` /
   `to_zero`, `attacker_seen`, `damage_types`) — a reaction that reduces the
   damage it answers before it lands. `roll` is the activity's own `healing` roll

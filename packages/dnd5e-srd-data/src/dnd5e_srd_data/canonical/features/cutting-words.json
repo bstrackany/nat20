@@ -55,6 +55,18 @@
         "prompt": false,
         "visible": false
       },
+      "roll_modifier": {
+        "applies_to": [
+          "attack",
+          "check"
+        ],
+        "mode": "roll",
+        "seen": true,
+        "whose": [
+          "enemy"
+        ],
+        "within_ft": 60
+      },
       "sort": 0,
       "target": {
         "affects": {

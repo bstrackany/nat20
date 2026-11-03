@@ -715,6 +715,33 @@ class ActivityTriggered(BaseModel):
     target_id: str
 
 
+#: The D20 Tests (SRD 5.2): attack rolls, saving throws, ability checks.
+D20Test = Literal["attack", "save", "check"]
+
+
+class D20TestChanged(BaseModel):
+    """A feature changed a D20 Test after the roll and before its outcome:
+    Halfling Luck's reroll of a 1, an armed Indomitable, Stroke of Luck or
+    Cutting Words. ``actor_id`` has the feature (``source_id``); ``roller_id``
+    made the roll. ``change`` is what it did (``RollModifierMode`` in
+    ``dnd5e-srd-data``); ``natural_before`` / ``total_before`` the roll as it
+    was. Emitted before the roll's own ``AttackRolled`` / ``SaveRolled`` /
+    ``CheckRolled``, which carries the changed numbers, and after
+    ``ReactionTriggered`` when the change took a Reaction."""
+
+    type: Literal["d20_test_changed"] = "d20_test_changed"
+    actor_id: str
+    source_id: str
+    roller_id: str
+    test: D20Test
+    change: Literal["roll", "reroll", "set", "succeed"]
+    natural_before: int
+    total_before: int
+    natural: int
+    total: int
+    succeeded: bool
+
+
 # ── roster ──────────────────────────────────────────────────────────────────
 
 #: Why a summoned creature left the initiative order (C21). SRD 5.2 Summon
@@ -837,6 +864,7 @@ CombatEvent = Annotated[
     | SpellCast
     | ReactionTriggered
     | ActivityTriggered
+    | D20TestChanged
     | CombatEnded
     | RechargeRolled
     | LegendaryActionUsed
@@ -885,6 +913,7 @@ ALL_COMBAT_EVENT_TYPES: tuple[type[BaseModel], ...] = (
     SpellCast,
     ActivityTriggered,
     ReactionTriggered,
+    D20TestChanged,
     CombatEnded,
     RechargeRolled,
     LegendaryActionUsed,
@@ -918,6 +947,8 @@ __all__ = [
     "ConditionApplied",
     "ConditionRemoved",
     "ConditionType",
+    "D20Test",
+    "D20TestChanged",
     "DamageApplied",
     "DamageType",
     "DashTaken",

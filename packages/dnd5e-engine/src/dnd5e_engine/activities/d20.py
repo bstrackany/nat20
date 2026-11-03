@@ -57,6 +57,9 @@ class D20Result:
     total: int
     mode: AdvantageMode
     sources: tuple[AdvantageSource, ...]
+    #: The die not kept under Advantage or Disadvantage (``None`` for one die):
+    #: a reroll rerolls only one of the two (``roll_modifiers.reroll_natural``).
+    dropped: int | None = None
 
 
 def resolve_mode(s: AdvantageSources) -> AdvantageMode:
@@ -87,6 +90,7 @@ def roll_d20_test(
     """
     mode = resolve_mode(sources)
     applied = sources.advantage + sources.disadvantage
+    dropped: int | None = None
     if forced_natural is not None:
         kept = first = int(forced_natural)
     elif mode == "normal":
@@ -94,4 +98,5 @@ def roll_d20_test(
     else:
         first, second = rng.randint(1, 20), rng.randint(1, 20)
         kept = max(first, second) if mode == "advantage" else min(first, second)
-    return D20Result(first, kept, modifier, kept + modifier, mode, applied)
+        dropped = first + second - kept
+    return D20Result(first, kept, modifier, kept + modifier, mode, applied, dropped)

@@ -69,6 +69,7 @@ from dnd5e_srd_data.schema.common import (
     DamageReductionMode,
     EnchantActivity,
     HealActivity,
+    RollModifierMode,
     SaveActivity,
 )
 from dnd5e_srd_data.schema.item import ArmorCategory, Weapon, WeaponProperty
@@ -118,9 +119,10 @@ from dnd5e_engine.activities.conjuration import (
 )
 from dnd5e_engine.activities.context import ActivityResolutionContext
 from dnd5e_engine.activities.d20 import AdvantageSources, roll_d20_test
-from dnd5e_engine.activities.dice import roll_damage_part
+from dnd5e_engine.activities.dice import roll_damage_part, roll_expr
 from dnd5e_engine.activities.effects import is_condition_immune
 from dnd5e_engine.activities.forced_movement import FORCED_MOVEMENT_RIDERS
+from dnd5e_engine.activities.formula import resolve_roll_data
 from dnd5e_engine.activities.monster_actions import (
     expand_action_to_activities,
     expand_action_to_parts,
@@ -174,6 +176,7 @@ from dnd5e_engine.events import (
     ConditionApplied,
     ConditionRemoved,
     ConditionType,
+    D20TestChanged,
     DamageApplied,
     DashTaken,
     Death,
@@ -198,6 +201,7 @@ from dnd5e_engine.events import (
     Unconscious,
 )
 from dnd5e_engine.interrupts import (
+    D20Outcome,
     IncomingDamage,
     Interrupts,
     reduce_damage,
@@ -215,6 +219,14 @@ from dnd5e_engine.rest import (
     FEATURE_USE_COUNTER_PREFIX,
     ITEM_USE_COUNTER_PREFIX,
     SLOTLESS_CAST_COUNTER_PREFIX,
+)
+from dnd5e_engine.roll_modifiers import (
+    formula_reach,
+    modified,
+    modifier_activity,
+    pool_feature,
+    rerolled,
+    worth_firing,
 )
 from dnd5e_engine.rules.character import (
     extra_attack_count,
@@ -287,7 +299,17 @@ _LOGGER = logging.getLogger(__name__)
 # ``PlayerIntent.reaction_trigger``'s own docstring already named as its
 # intended examples.
 ReactionTrigger = Literal[
-    "cast_spell", "hit_by_attack", "targeted_by_magic_missile", "takes_damage"
+    "cast_spell",
+    "hit_by_attack",
+    "targeted_by_magic_missile",
+    "takes_damage",
+    # A creature misses the reactor with an attack roll (a consumer's own
+    # reaction: "When a creature misses you with an attack roll")
+    "missed_by_attack",
+    # A D20 Test is rolled and not yet decided: a feature that changes it
+    # (``Activity.roll_modifier``) is armed on this, whether or not it takes a
+    # Reaction (``roll_modifiers.py``)
+    "d20_test",
 ]
 
 #: The corpus's typed reaction conditions (``ActivationBlock.reaction_conditions``,
@@ -298,6 +320,7 @@ _REACTION_KIND_TO_TRIGGER: dict[str, ReactionTrigger] = {
     "sees_spell_cast": "cast_spell",
     "targeted_by_spell": "targeted_by_magic_missile",
     "takes_damage": "takes_damage",
+    "missed_by_attack": "missed_by_attack",
 }
 
 # SRD 5.2 granted dice a creature spends on its own roll. One today: "That
@@ -12047,7 +12070,8 @@ def _fire_resolution_triggers(live: _LiveCombat, actor: Combatant, pre_event_cou
     use's effect when ``against_bearer``), a hit on a subject
     (``hit_by_attack``, resolved against the attacker) and damage a subject
     takes (``takes_damage``, resolved against ``actor``, whose resolution dealt
-    it). Reads a snapshot of the slice, so what a fired activity itself emits
+    it). A miss fires the missed creature's armed ``missed_by_attack`` reaction
+    against the attacker. Reads a snapshot of the slice, so what a fired activity itself emits
     fires nothing further."""
     events = list(live.event_log[pre_event_count:])
     for ev in events:
@@ -12080,6 +12104,15 @@ def _fire_resolution_triggers(live: _LiveCombat, actor: Combatant, pre_event_cou
                     _fire_triggered_activity(
                         live, use, activity, subject_id=ev.target_id, target_id=ev.attacker_id
                     )
+        elif isinstance(ev, AttackRolled) and (missed := _find_combatant(live, ev.target_id)):
+            # "When a creature misses you with an attack roll": the missed
+            # creature's armed reaction answers the attacker.
+            _drain_targeted_reactions(
+                live,
+                trigger="missed_by_attack",
+                triggering_actor_id=ev.attacker_id,
+                targets=[missed],
+            )
         elif isinstance(ev, DamageApplied) and ev.amount > 0 and ev.target_id != actor.entity_id:
             # SRD §Reactions — "taking damage from a creature" (Hellish Rebuke,
             # a feat's "when you take damage"): the damaged creature's armed
@@ -12690,9 +12723,12 @@ def _register_pending_reaction(live: _LiveCombat, actor_id: str, intent: PlayerI
 def _reaction_triggers_of(source: Any) -> list[ReactionTrigger]:
     """The queue triggers a spell's, feature's or feat's own activities name
     (``activation.reaction_conditions``, typed from each reaction's text), in
-    corpus order, each once."""
+    corpus order, each once; ``d20_test`` for an activity that changes a D20
+    Test (``roll_modifier``)."""
     triggers: list[ReactionTrigger] = []
     for activity in getattr(source, "activities", ()):
+        if getattr(activity, "roll_modifier", None) is not None and "d20_test" not in triggers:
+            triggers.append("d20_test")
         for condition in activity.activation.reaction_conditions:
             trigger = _REACTION_KIND_TO_TRIGGER.get(str(condition.kind.value))
             if trigger is not None and trigger not in triggers:
@@ -12941,8 +12977,10 @@ def _pop_pending_reaction(
     once); ``None`` when nothing qualifies.
 
     An armed reaction whose owner fails ``eligible`` is SKIPPED (left queued,
-    no Reaction spent). The scan continues in initiative order to the
-    next candidate rather than stopping.
+    no Reaction spent). The scan tries the reactor's other entries for the
+    trigger in arming order (its priority), then continues in initiative order
+    to the next candidate rather than stopping: Shield armed first with no slot
+    left must not keep an Uncanny Dodge armed behind it from firing.
     """
     for reactor in live.initiative:
         if reactor.entity_id == triggering_actor_id:
@@ -12962,19 +13000,15 @@ def _pop_pending_reaction(
             continue
         if not reactor.reaction_available:
             continue
-        match = next(
-            (
-                pr
-                for pr in live.pending_reactions
-                if pr.owner_id == reactor.entity_id and pr.trigger == trigger
-            ),
-            None,
-        )
-        if match is not None:
-            if eligible is not None and not eligible(reactor, match):
-                continue
-            live.pending_reactions.remove(match)
-            return match
+        matches = [
+            pr
+            for pr in live.pending_reactions
+            if pr.owner_id == reactor.entity_id and pr.trigger == trigger
+        ]
+        for match in matches:
+            if eligible is None or eligible(reactor, match):
+                live.pending_reactions.remove(match)
+                return match
     return None
 
 
@@ -13286,6 +13320,9 @@ class _ArmedInterrupts(Interrupts):
     def before_damage_applied(self, incoming: IncomingDamage) -> dict[str, int]:
         return _reduce_with_armed_reaction(self._live, incoming)
 
+    def before_d20_outcome(self, outcome: D20Outcome) -> D20Outcome:
+        return _settle_d20_with_armed_modifier(self._live, outcome)
+
 
 def _pending_reduction(pending: _PendingReaction) -> Any | None:
     """The damage-reducing activity of an armed reaction's spell, feature or
@@ -13400,6 +13437,217 @@ def _fire_reduction(
         )
         rolled = reduction_roll(activity, actx)
     return reduce_damage(by_type, reduction.mode, rolled)
+
+
+#: Halfling Luck's Foundry flag (SRD 5.2 Luck: "When you roll a 1 on the d20 of a
+#: D20 Test, you can reroll the die, and you must use the new roll").
+_LUCK_FLAG: Final = "flags.dnd5e.halflingLucky"
+
+
+def _settle_d20_with_armed_modifier(live: _LiveCombat, outcome: D20Outcome) -> D20Outcome:
+    """A D20 Test rolled and not yet decided, changed by what the creatures in
+    the combat have (``roll_modifiers.py``). A natural 1 of a creature with
+    Luck is rerolled first: it costs nothing and "you must use the new roll".
+    Then the first armed modifier that is worth firing fires (creatures in
+    initiative order, each one's in arming order); one per roll. Returns the
+    roll that stands."""
+    outcome = _halfling_luck(live, outcome)
+    for owner in list(live.initiative):
+        armed = [
+            pr
+            for pr in live.pending_reactions
+            if pr.owner_id == owner.entity_id and pr.trigger == "d20_test"
+        ]
+        for pending in armed:
+            changed = _fire_roll_modifier(live, owner, pending, outcome)
+            if changed is not None:
+                return changed
+    return outcome
+
+
+def _halfling_luck(live: _LiveCombat, outcome: D20Outcome) -> D20Outcome:
+    """Reroll a natural 1 of a roller whose feature or feat carries Luck's flag,
+    drawing one d20 from the combat's RNG after the roll's own dice."""
+    if outcome.natural != 1:
+        return outcome
+    roller = _find_combatant(live, outcome.roller_id)
+    source = _luck_source(roller) if roller is not None else None
+    if source is None:
+        return outcome
+    changed = rerolled(outcome, live.rng.randint(1, 20), helps=True)
+    _emit_d20_change(live, outcome.roller_id, source, "reroll", outcome, changed)
+    return changed
+
+
+def _luck_source(roller: Combatant) -> str | None:
+    """The granted feature (Halfling's Luck) or held feat carrying Luck's flag."""
+    loader = get_lib_loader()
+    sources: list[tuple[str, Any]] = [
+        (slug, loader.get_feature(slug)) for slug in sorted(_granted_feature_slugs(roller))
+    ]
+    sources += [(slug, loader.get_feat(slug)) for slug in roller.feats]
+    for slug, source in sources:
+        for effect in getattr(source, "passive_effects", ()):
+            if not effect.disabled and any(c.key == _LUCK_FLAG for c in effect.changes):
+                return slug
+    return None
+
+
+def _fire_roll_modifier(
+    live: _LiveCombat, owner: Combatant, pending: _PendingReaction, outcome: D20Outcome
+) -> D20Outcome | None:
+    """Fire ``owner``'s armed feature or feat that changes ``outcome``, when it
+    answers this roll and is worth firing (``roll_modifiers.worth_firing``), and
+    return the roll that stands; ``None`` when it does not fire. It answers a
+    roll of the kind it ``applies_to``, by a roller it names (``whose``; another
+    creature within ``within_ft`` and, under ``seen``, in sight), when the owner
+    is alive with a use left (its own, or the other feature's it spends:
+    Cutting Words' Bardic Inspiration) and, for a Reaction, the Reaction free
+    and not Incapacitated. Firing spends the use (and the Reaction, emitting
+    ``ReactionTriggered``), then draws its dice from the combat's RNG: a
+    ``reroll``'s d20, then the activity's own roll (Cutting Words' die, Dark
+    One's Own Luck's d10; Indomitable's bonus draws none)."""
+    if not pending.feature_id or not owner.is_alive or owner.hp_current <= 0:
+        return None
+    loader = get_lib_loader()
+    source = loader.get_feature(pending.feature_id) or loader.get_feat(pending.feature_id)
+    activity = modifier_activity(source, pending.activity_id)
+    roller = _find_combatant(live, outcome.roller_id)
+    if activity is None or roller is None:
+        return None
+    modifier = activity.roll_modifier
+    side = _side_toward(live, owner.entity_id, roller.entity_id)
+    if outcome.kind not in modifier.applies_to or side not in modifier.whose:
+        return None
+    if side != "self" and not _within_and_seen(live, owner, roller, modifier):
+        return None
+    reaction = activity.activation.type == "reaction"
+    if reaction and (
+        not owner.reaction_available or conditions_block_actions(_condition_names(owner))
+    ):
+        return None
+    pool = _roll_modifier_pool(live, owner, pending.feature_id, activity)
+    if pool is None:
+        return None
+    formula = activity.roll.formula if hasattr(activity, "roll") else ""
+    if formula:
+        formula = resolve_roll_data(formula, _owner_context(live, owner))
+    helps = side != "enemy"
+    if not worth_firing(modifier, outcome, helps=helps, reach=formula_reach(formula)):
+        return None
+    live.pending_reactions.remove(pending)
+    pool_id, cap, cost = pool
+    if cap is not None and cost > 0:
+        _increment_feature_use(live, owner.entity_id, pool_id, cost)
+    if reaction:
+        _update_combatant(live, owner.entity_id, reaction_available=False)
+        _emit(
+            live,
+            ReactionTriggered(
+                actor_id=owner.entity_id, reaction_name=pending.feature_id, trigger_event_uuid=""
+            ),
+        )
+    new_die = live.rng.randint(1, 20) if modifier.mode is RollModifierMode.REROLL else 0
+    amount = roll_expr(formula, live.rng) if formula else 0
+    changed = modified(modifier, outcome, helps=helps, amount=amount, new_die=new_die)
+    _emit_d20_change(
+        live, owner.entity_id, pending.feature_id, modifier.mode.value, outcome, changed
+    )
+    return changed
+
+
+def _side_toward(live: _LiveCombat, owner_id: str, roller_id: str) -> str | None:
+    """``"self"``, ``"ally"`` or ``"enemy"``: the roller seen from the owner."""
+    if roller_id == owner_id:
+        return "self"
+    if _is_enemy(live, owner_id, roller_id):
+        return "enemy"
+    return "ally" if roller_id in _allied_ids(live, owner_id) else None
+
+
+def _within_and_seen(live: _LiveCombat, owner: Combatant, roller: Combatant, modifier: Any) -> bool:
+    """Cutting Words: "a creature that you can see within 60 feet of yourself"
+    — a creature without a tracked position is not within any distance."""
+    if modifier.within_ft is not None:
+        here = live.actor_zone.get(owner.entity_id)
+        there = live.actor_zone.get(roller.entity_id)
+        distance = None if here is None or there is None else live.topology.distance_ft(here, there)
+        if distance is None or distance > modifier.within_ft:
+            return False
+    return not modifier.seen or _combatant_can_see(live, owner, roller)
+
+
+def _roll_modifier_pool(
+    live: _LiveCombat, owner: Combatant, feature_id: str, activity: Any
+) -> tuple[str, int | None, int] | None:
+    """``(feature whose uses it spends, that feature's cap, cost)``, or ``None``
+    when the owner lacks the feature or its uses are spent. A modifier spends
+    its own feature's uses, or another's its consumption names (Cutting Words:
+    "expend one use of your Bardic Inspiration"). An uncapped feature (``cap``
+    ``None``) never runs out."""
+    other = pool_feature(activity)
+    if other is None:
+        invocation = _resolve_feature_invocation(owner, feature_id, activity.id)
+        if invocation is None:
+            return None
+        pool_id, cap, cost = feature_id, invocation.use_cap, invocation.use_cost
+    else:
+        pool_id, cost = other
+        pool = get_lib_loader().get_feature(pool_id)
+        if pool is None or pool_id not in _granted_feature_slugs(owner):
+            return None
+        cap = _feature_use_cap(pool, _uses_roll_data(owner, _scale_values_of(owner)))
+    if cost > 0 and not _feature_spend_fits_cap(live, owner.entity_id, pool_id, cap=cap, cost=cost):
+        return None
+    return pool_id, cap, cost
+
+
+def _owner_context(live: _LiveCombat, owner: Combatant) -> ActivityResolutionContext:
+    """The context a modifier's roll formula resolves in: the owner's numbers,
+    scale values (``@scale.bard.inspiration``) and class levels
+    (``@classes.fighter.levels``)."""
+    return build_activity_context(
+        owner,
+        [owner],
+        rng=live.rng,
+        event_emitter=lambda ev: _emit(live, ev),
+        slot_level=None,
+        base_spell_level=None,
+        spellcasting_ability=None,
+        concentration=False,
+        source_passive_effects=[],
+        spell_book={},
+        passive_damage_modifiers={},
+        save_modifiers={},
+        scale_values=_scale_values_of(owner),
+        class_levels=_class_levels(owner),
+        is_feature_invocation=True,
+    )
+
+
+def _emit_d20_change(
+    live: _LiveCombat,
+    actor_id: str,
+    source_id: str,
+    change: Literal["roll", "reroll", "set", "succeed"],
+    before: D20Outcome,
+    after: D20Outcome,
+) -> None:
+    _emit(
+        live,
+        D20TestChanged(
+            actor_id=actor_id,
+            source_id=source_id,
+            roller_id=before.roller_id,
+            test=before.kind,
+            change=change,
+            natural_before=before.natural,
+            total_before=before.total,
+            natural=after.natural,
+            total=after.total,
+            succeeded=after.succeeded,
+        ),
+    )
 
 
 def _drain_counterspell_reaction(
