@@ -1,12 +1,17 @@
 # This fork of nat20
 
 Party of None's rules engine is this fork of [tapestria/nat20](https://github.com/tapestria/nat20),
-branched from upstream `e187c81` (the 0.7.0 close-out, 2026-10-09). Every change is on `main`,
-on top of upstream, with tests, a `CHANGELOG.md` `[Unreleased]` entry in the package it touches
+branched from upstream `e187c81` (the 0.7.0 close-out, 2026-10-09). Every change is on the
+local `main`, on top of upstream, with tests, a `CHANGELOG.md` `[Unreleased]` entry in the package it touches
 and the relevant `docs/` page. The engine and data gates (`make check` in `packages/dnd5e-engine` and
 `packages/dnd5e-srd-data`) pass at every commit; `packages/nat20-bridge`'s passes from `b5662bf` on. The whole set is meant to go upstream as one
 PR, so what matters is the aggregate diff against `e187c81`: **144 files, +12,314 / −379** —
 about 6,200 lines of source, 4,350 of tests, 570 of docs, 570 of canonical data.
+
+**Where it lives:** GitHub [bstrackany/nat20](https://github.com/bstrackany/nat20), branch
+`party-of-none`, which the local `main` tracks. The fork's GitHub `main` always mirrors upstream
+(a ruleset blocks pushes to it), so fork work never goes there. Rows 1–27 are pushed
+(2026-11-03); each later push waits for Ben's OK.
 
 **Rule:** nat20 is not our code. Any change here, however small, is discussed with and agreed
 to by Ben first; Party of None works around engine gaps or proposes the engine change and waits.
