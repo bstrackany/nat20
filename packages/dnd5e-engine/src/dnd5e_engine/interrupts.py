@@ -11,7 +11,11 @@ It rides on the activity context (``ActivityResolutionContext.interrupts``), so
 the pure resolvers ask it without importing the orchestrator, which builds the
 live one from what each creature keeps armed. The default interrupts nothing.
 
-It has two moments. ``before_damage_applied``: damage about to land on a
+It has three moments. ``before_d20_roll``: a D20 Test about to be rolled
+(``activities/attack.py``, ``save_primitive.py``, ``check.py``), which a creature
+may change "Immediately before you make a D20 Test" (SRD 5.2 Lucky: Advantage)
+or by replacing the die with a number it foretold (Portent: "You must choose to
+do so before the roll"). ``before_damage_applied``: damage about to land on a
 creature, after it is rolled and before Resistance, Vulnerability and Immunity
 fold in (``activities/apply.py``). ``before_d20_outcome``: a D20 Test rolled and
 not yet decided (``activities/attack.py``, ``save_primitive.py``, ``check.py``);
@@ -36,6 +40,7 @@ if TYPE_CHECKING:
     from dnd5e_srd_data.schema.common import D20TestKind, DamageReduction
 
     from dnd5e_engine.activities.context import ActivityResolutionContext
+    from dnd5e_engine.activities.d20 import AdvantageSources
     from dnd5e_engine.events import AdvantageMode
 
 
@@ -49,6 +54,20 @@ class IncomingDamage:
     attacker_id: str
     by_type: Mapping[str, int]
     attack_hit: bool = False
+
+
+@dataclass(frozen=True)
+class D20Roll:
+    """A D20 Test about to be rolled: ``roller_id`` rolls with ``sources`` of
+    Advantage and Disadvantage, ``opposer_id`` on the other side (as in
+    ``D20Outcome``). ``natural``, when set, is what the die shows without being
+    rolled: no die is drawn (a foretold number; the tests' forced d20)."""
+
+    kind: D20TestKind
+    roller_id: str
+    opposer_id: str
+    sources: AdvantageSources
+    natural: int | None = None
 
 
 @dataclass(frozen=True)
@@ -80,6 +99,10 @@ class D20Outcome:
 class Interrupts:
     """What an activity resolution asks before an outcome stands. This default
     changes nothing; the orchestrator passes one that fires armed reactions."""
+
+    def before_d20_roll(self, roll: D20Roll) -> D20Roll:
+        """The D20 Test to roll instead of ``roll``."""
+        return roll
 
     def before_damage_applied(self, incoming: IncomingDamage) -> dict[str, int]:
         """The amounts per damage type that land instead of ``incoming.by_type``."""

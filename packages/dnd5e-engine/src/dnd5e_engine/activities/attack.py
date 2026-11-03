@@ -78,7 +78,7 @@ from dnd5e_engine.activities.effects import apply_activity_effects
 from dnd5e_engine.activities.formula import resolve_damage_block, resolve_roll_data
 from dnd5e_engine.activities.mastery import apply_mastery_on_hit, apply_mastery_on_miss
 from dnd5e_engine.events import AdvantageMode, AdvantageSource, AttackRolled
-from dnd5e_engine.interrupts import D20Outcome
+from dnd5e_engine.interrupts import D20Outcome, D20Roll
 from dnd5e_engine.rules.conditions import (
     active_condition_names,
     conditions_auto_crit_within_5ft,
@@ -196,7 +196,13 @@ def resolve_attack(
             attacker_has_disadvantage=attacker_has_disadvantage,
             heavy_disadvantage=heavy_disadvantage,
         )
-        roll = roll_d20_test(ctx.rng, attack_bonus, sources, forced_natural=_forced_d20(ctx, index))
+        pre = ctx.interrupts.before_d20_roll(
+            D20Roll(
+                "attack", ctx.caster.entity_id, target.entity_id, sources, _forced_d20(ctx, index)
+            )
+        )
+        sources = pre.sources
+        roll = roll_d20_test(ctx.rng, attack_bonus, sources, forced_natural=pre.natural)
         mode: AdvantageMode = roll.mode
         natural, total = roll.kept, roll.total
         if attack_bonus_expr:
@@ -373,7 +379,9 @@ def _resolve_cleave_chain(
         attacker_has_disadvantage=attacker_has_disadvantage,
         heavy_disadvantage=heavy_disadvantage,
     )
-    roll = roll_d20_test(ctx.rng, attack_bonus, sources, forced_natural=None)
+    pre = ctx.interrupts.before_d20_roll(D20Roll("attack", ctx.caster.entity_id, cid, sources))
+    sources = pre.sources
+    roll = roll_d20_test(ctx.rng, attack_bonus, sources, forced_natural=pre.natural)
     total = roll.total
     if attack_bonus_expr:
         total += roll_expr(attack_bonus_expr, ctx.rng)

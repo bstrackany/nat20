@@ -76,6 +76,10 @@ AdvantageSource = Literal[
     "dodge",
     "help",
     "trait",
+    # Chosen before the roll by the roller or another creature (SRD 5.2 Lucky:
+    # "Immediately before you make a D20 Test, you can spend 1 Luck Point to
+    # give yourself Advantage"), through ``ReactionResolver.before_d20_roll``.
+    "chosen",
 ]
 
 EffectExpiryReason = Literal[

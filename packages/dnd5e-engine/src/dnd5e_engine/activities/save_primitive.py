@@ -41,7 +41,7 @@ from dnd5e_srd_data.schema.monster import MonsterTraitMechanic
 
 from dnd5e_engine.activities.d20 import AdvantageSources, D20Result, roll_d20_test
 from dnd5e_engine.events import AdvantageMode, AdvantageSource
-from dnd5e_engine.interrupts import D20Outcome
+from dnd5e_engine.interrupts import D20Outcome, D20Roll
 from dnd5e_engine.spatial import cover_bonus
 
 if TYPE_CHECKING:
@@ -305,7 +305,10 @@ def _roll_save_d20(
         advantage=advantage,
         disadvantage=("condition:target",) if has_dis else (),
     )
-    return roll_d20_test(ctx.rng, modifier, sources, forced_natural=forced_natural)
+    pre = ctx.interrupts.before_d20_roll(
+        D20Roll("save", target.entity_id, ctx.caster.entity_id, sources, forced_natural)
+    )
+    return roll_d20_test(ctx.rng, modifier, pre.sources, forced_natural=pre.natural)
 
 
 def _passive_save_bonus(ctx: ActivityResolutionContext, target: Combatant) -> int:

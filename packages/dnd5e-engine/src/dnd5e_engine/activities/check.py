@@ -56,7 +56,7 @@ from dnd5e_engine.activities.dice import roll_expr
 from dnd5e_engine.activities.effects import apply_activity_effects
 from dnd5e_engine.activities.formula import resolve_roll_data
 from dnd5e_engine.events import Ability, AdvantageSource, CheckRolled
-from dnd5e_engine.interrupts import D20Outcome
+from dnd5e_engine.interrupts import D20Outcome, D20Roll
 from dnd5e_engine.rules.skills import SKILL_CODE_TO_SLUG
 
 if TYPE_CHECKING:
@@ -293,12 +293,11 @@ def _roll_d20(
         adv = ("effect",)
     if codes & set(entry.get("passive_check_dis", ())) and not dis:
         dis = ("effect",)
-    return roll_d20_test(
-        ctx.rng,
-        modifier,
-        AdvantageSources(advantage=adv, disadvantage=dis),
-        forced_natural=forced_natural,
+    opposer = "" if actor is ctx.caster else ctx.caster.entity_id
+    pre = ctx.interrupts.before_d20_roll(
+        D20Roll("check", actor.entity_id, opposer, AdvantageSources(adv, dis), forced_natural)
     )
+    return roll_d20_test(ctx.rng, modifier, pre.sources, forced_natural=pre.natural)
 
 
 def _check_modifier(

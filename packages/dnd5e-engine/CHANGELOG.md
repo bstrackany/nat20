@@ -25,6 +25,12 @@ caster takes. Requires the matching `dnd5e-srd-data`.
   `IncomingDamage`, or the triggering creature's id. Nothing catches what it
   raises, and nothing is spent or drawn before it is asked, so a host can ask
   a player and replay. The default says yes: behaviour is unchanged. No RNG.
+- **The moment before a d20 is rolled.** `Interrupts.before_d20_roll(D20Roll)`,
+  asked before the die of each attack roll (and Cleave's), activity save and
+  check; the orchestrator's passes it to `ReactionResolver.before_d20_roll`,
+  which may add Advantage or Disadvantage sources (new `AdvantageSource`
+  `"chosen"`: SRD 5.2 Lucky) or set `natural`, which the die shows without a
+  draw (Portent). The default changes nothing.
 
 - **Always-on effects that count only while something holds.** A feature's or
   feat's always-on effect whose data sets `PassiveEffect.active_while`

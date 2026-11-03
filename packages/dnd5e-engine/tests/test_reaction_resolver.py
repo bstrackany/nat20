@@ -1,25 +1,28 @@
-"""``ReactionResolver`` — whether a reaction fires.
+"""``ReactionResolver`` — whether a reaction fires, and the moment before a d20.
 
-The default says yes to every eligible reaction, so every other test in this
-suite is its regression check; these install one resolver at a time. Also
-here: Shield answering an attack roll as it hits (``_raise_ac_when_hit``)
-rather than before it is rolled.
+The default says yes to every eligible reaction and changes no roll, so every
+other test in this suite is its regression check; these install one resolver at
+a time. Also here: Shield answering an attack roll as it hits
+(``_raise_ac_when_hit``) rather than before it is rolled.
 """
 
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import Any
 
 import pytest
 
 from dnd5e_engine import ReactionResolver, set_reaction_resolver
-from dnd5e_engine.events import AttackRolled, ReactionTriggered
-from dnd5e_engine.interrupts import D20Outcome, IncomingDamage, raised_target
+from dnd5e_engine.events import AttackRolled, ReactionTriggered, SaveRolled
+from dnd5e_engine.interrupts import D20Outcome, D20Roll, IncomingDamage, Interrupts, raised_target
+from dnd5e_engine.lib_loader import set_lib_loader_for_tests
 from dnd5e_engine.orchestrator import _fire_opportunity_attacks_on_step
 from dnd5e_engine.reaction_resolver import reaction_resolver
 from dnd5e_engine.spatial import cell_id
-from tests.c20_support import act, events, monster_turn, pc, start
-from tests.fork_support import goblin
+from tests.c20_support import act, events, hold_person, monster_turn, pc, start
+from tests.c20_support import wizard as hold_person_caster
+from tests.fork_support import WithAssets, cast, goblin
 
 PC = "char:pc"
 
@@ -29,6 +32,7 @@ def _default_resolver():
     set_reaction_resolver(None)
     yield
     set_reaction_resolver(None)
+    set_lib_loader_for_tests(None)
 
 
 class _Recording(ReactionResolver):
@@ -77,6 +81,9 @@ def _goblin_swings(live) -> list[AttackRolled]:
 
 def test_the_default_fires_every_eligible_reaction():
     assert reaction_resolver().fires(None, None, None, "hit_by_attack", None) is True
+    roll = D20Roll("attack", PC, "mon:foe", sources=None)  # type: ignore[arg-type]
+    assert reaction_resolver().before_d20_roll(None, roll) is roll
+    assert Interrupts().before_d20_roll(roll) is roll
 
 
 def test_a_declined_shield_stays_armed_and_the_hit_stands():
@@ -184,3 +191,66 @@ def test_raised_target_judges_the_roll_again(natural, total, hits):
     )
     raised = raised_target(outcome, 5)
     assert (raised.target, raised.succeeded) == (16, hits)
+
+
+# ── before the d20 is rolled ─────────────────────────────────────────────────
+
+
+class _Lucky(ReactionResolver):
+    """Advantage on the hero's own D20 Tests (SRD 5.2 Lucky)."""
+
+    def before_d20_roll(self, live, roll):
+        if roll.roller_id != PC:
+            return roll
+        sources = replace(roll.sources, advantage=(*roll.sources.advantage, "chosen"))
+        return replace(roll, sources=sources)
+
+
+class _Portent(ReactionResolver):
+    """Every D20 Test by ``roller`` shows ``natural`` (SRD 5.2 Portent)."""
+
+    def __init__(self, roller: str, natural: int) -> None:
+        self.roller, self.natural = roller, natural
+        self.asked: list[D20Roll] = []
+
+    def before_d20_roll(self, live, roll):
+        self.asked.append(roll)
+        return replace(roll, natural=self.natural) if roll.roller_id == self.roller else roll
+
+
+def test_advantage_chosen_before_an_attack_roll():
+    set_reaction_resolver(_Lucky())
+    handle, live = start(
+        [pc(PC, spells_known=["fire-bolt"], initiative=20)], encounter=[goblin()], seed=3
+    )
+    cast(handle, "fire-bolt", actor_id=PC, target_id="mon:foe")
+    [bolt] = [a for a in events(live, AttackRolled) if a.attacker_id == PC]
+    assert bolt.advantage == "advantage"
+    assert "chosen" in bolt.advantage_sources
+
+
+def test_a_foretold_number_replaces_the_attackers_d20():
+    resolver = _Portent("mon:foe", 1)
+    set_reaction_resolver(resolver)
+    handle, live = _wizard(ac=1)
+    monster_turn(handle)
+    [swing] = _goblin_swings(live)
+    assert (swing.natural, swing.is_hit) == (1, False)
+    assert not events(live, ReactionTriggered), "a miss draws no Shield"
+    [asked] = [r for r in resolver.asked if r.roller_id == "mon:foe"]
+    assert (asked.kind, asked.opposer_id) == ("attack", PC)
+
+
+def test_a_foretold_number_replaces_a_saving_throw():
+    """Hold Person's Wisdom save, made by the hero, shows the foretold 20."""
+    set_lib_loader_for_tests(WithAssets())
+    resolver = _Portent(PC, 20)
+    set_reaction_resolver(resolver)
+    handle, live = start([pc(PC, initiative=20), hold_person_caster()], seed=2)
+    act(handle, PC, intent_type="pass")
+    hold_person(handle, PC)
+    [save] = [s for s in events(live, SaveRolled) if s.target_id == PC]
+    assert save.natural == 20
+    assert save.succeeded
+    [asked] = [r for r in resolver.asked if r.kind == "save"]
+    assert (asked.roller_id, asked.opposer_id) == (PC, "char:wiz")

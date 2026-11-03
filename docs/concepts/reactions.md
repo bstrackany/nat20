@@ -39,8 +39,8 @@ armed reaction fires, and a resolver may stop the resolution by raising.
 ## Choosing in the moment: `ReactionResolver`
 
 One object, installed for the process with `set_reaction_resolver` (as
-`set_monster_ai` installs a `MonsterAI`). Its default is the engine's own
-behaviour.
+`set_monster_ai` installs a `MonsterAI`), with two methods. The default of each
+is the engine's own behaviour.
 
 - `fires(live, reactor, reaction, trigger, context) -> bool` is asked just
   before an eligible reaction fires: an armed spell, feature or feat
@@ -50,6 +50,11 @@ behaviour.
   `IncomingDamage` it would reduce (Uncanny Dodge), else the id of the creature
   whose act triggered it. The default says yes. `False` leaves the reaction
   armed and lets the next eligible one answer, in the usual order.
+- `before_d20_roll(live, roll) -> D20Roll` is asked before the die of each
+  attack roll, activity save and check is rolled. It may add Advantage or
+  Disadvantage sources (`"chosen"`: SRD 5.2 Lucky) or set `natural`, which the
+  die shows without being rolled (Portent's foretelling roll). The default
+  changes nothing.
 
 Nothing in the engine catches what `fires` raises, and it is asked before the
 Reaction, the use or slot is spent and before any die of the reaction is
@@ -175,8 +180,8 @@ these three points, before any armed modifier.
 Not covered: death saves, the concentration check and the end-of-turn repeat
 save (resolved outside the activity resolvers), damage rolls (Cutting Words'
 other use), Advantage or Disadvantage imposed on another creature's roll, and
-a Portent-style replacement chosen before the roll, and a spell carrying
-`roll_modifier`.
+and a spell carrying `roll_modifier`. A number foretold before the roll
+(Portent) is the host's, through `ReactionResolver.before_d20_roll`.
 
 Shield answers the hit itself: an attack roll that would hit fires the target's
 first armed `hit_by_attack` reaction after the roll and before the hit stands,

@@ -213,6 +213,7 @@ from dnd5e_engine.events import (
 )
 from dnd5e_engine.interrupts import (
     D20Outcome,
+    D20Roll,
     IncomingDamage,
     Interrupts,
     raised_target,
@@ -14198,6 +14199,9 @@ class _ArmedInterrupts(Interrupts):
         #: AC an armed reaction raised during this resolution, per creature
         #: (``_raise_ac_when_hit``).
         self._raised: dict[str, int] = {}
+
+    def before_d20_roll(self, roll: D20Roll) -> D20Roll:
+        return reaction_resolver().before_d20_roll(self._live, roll)
 
     def before_damage_applied(self, incoming: IncomingDamage) -> dict[str, int]:
         return _reduce_with_armed_reaction(self._live, incoming)
