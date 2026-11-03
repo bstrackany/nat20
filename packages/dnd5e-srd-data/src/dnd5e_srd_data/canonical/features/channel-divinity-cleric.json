@@ -380,6 +380,9 @@
       "duration": {
         "seconds": 60
       },
+      "ends_on": [
+        "takes_damage"
+      ],
       "id": "iUeSbfduM7K8XrCF",
       "name": "Turned",
       "statuses": [

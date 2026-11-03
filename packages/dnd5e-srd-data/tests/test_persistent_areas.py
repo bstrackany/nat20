@@ -118,6 +118,10 @@ def test_an_area_the_engine_cannot_run_is_refused(build) -> None:  # type: ignor
         ("spells", "cloudkill", "moves 10 feet away from you at the start of each"),
         ("spells", "incendiary-cloud", "A creature makes this save only once per turn"),
         ("features", "aura-of-protection", "The aura is inactive while you have"),
+        ("spells", "daylight", "The sunlight's area is Bright Light"),
+        ("spells", "holy-aura", "creatures of your choice have Advantage on all saving throws"),
+        ("spells", "conjure-woodland-beings", "A creature makes this save only once per turn"),
+        ("spells", "earthquake", "The ground there is Difficult Terrain"),
     ],
 )
 def test_the_table_reached_the_corpus(kind: str, slug: str, sentence: str) -> None:

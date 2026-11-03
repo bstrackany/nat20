@@ -191,7 +191,8 @@
       "id": "7dnnwBMWLykrVJub",
       "name": "Reduced Movement",
       "statuses": [],
-      "transfer": false
+      "transfer": false,
+      "until": "start_of_next_turn"
     }
   ],
   "preparation": {

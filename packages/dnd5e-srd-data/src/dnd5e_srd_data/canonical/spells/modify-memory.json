@@ -134,6 +134,9 @@
       "duration": {
         "seconds": 60
       },
+      "ends_on": [
+        "takes_damage"
+      ],
       "id": "ayfixWGhTtaIUusk",
       "name": "Memory Modification",
       "statuses": [

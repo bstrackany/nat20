@@ -243,7 +243,8 @@
       "statuses": [
         "poisoned"
       ],
-      "transfer": false
+      "transfer": false,
+      "until": "end_of_turn"
     }
   ],
   "preparation": {

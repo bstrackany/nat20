@@ -278,6 +278,9 @@
       "duration": {
         "seconds": 60
       },
+      "ends_on": [
+        "takes_damage"
+      ],
       "id": "5btX5iwwleMMzkvj",
       "name": "Asleep",
       "statuses": [

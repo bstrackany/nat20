@@ -775,6 +775,9 @@
       "duration": {
         "seconds": 600
       },
+      "ends_on": [
+        "takes_damage"
+      ],
       "id": "A1VA7t5gB7ODNsr6",
       "name": "Sleeping",
       "statuses": [

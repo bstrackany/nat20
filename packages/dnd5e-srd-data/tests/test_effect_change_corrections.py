@@ -1,9 +1,10 @@
 """Effect-change corrections (translator override table).
 
-Two SRD 5.2 spells state a mechanic their pinned Foundry effect leaves to a
-module: Blur's "any creature has Disadvantage on attack rolls against you" and
+Some SRD 5.2 spells state a mechanic their pinned Foundry effect leaves to a
+module: Blur's "any creature has Disadvantage on attack rolls against you",
 Faerie Fire's "Attack rolls against an affected creature or object have
-Advantage". The translator appends the change the engine's attack resolver
+Advantage", and the same grants on Guiding Bolt, Shining Smite and Holy Aura.
+The translator appends the change the engine's attack resolver
 reads (``flags.grants.{disadvantage,advantage}.attack``) through
 ``tools.translators.foundry._EFFECT_CHANGE_CORRECTIONS``; these tests pin the
 shipped canonical output against that table.
@@ -13,6 +14,8 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+
+import pytest
 
 from dnd5e_srd_data import BundledAssetLoader
 from dnd5e_srd_data.schema.common import PassiveEffectChange
@@ -69,6 +72,40 @@ def test_blurs_cast_applies_the_blurred_effect() -> None:
         spell.activities
     )
     assert set(_ACTIVITY_EFFECT_REF_CORRECTIONS) == {("blur", "dnd5eactivity000")}
+
+
+@pytest.mark.parametrize(
+    ("slug", "effect_id", "key", "sentence"),
+    [
+        (
+            "guiding-bolt",
+            "rHzZCeXfdeTcYyk8",
+            "flags.grants.advantage.attack",
+            "the next attack roll made against it before the end of your next turn has Advantage",
+        ),
+        (
+            "shining-smite",
+            "pBjrcT286iCAQrjm",
+            "flags.grants.advantage.attack",
+            "attack rolls against it have Advantage",
+        ),
+        (
+            "holy-aura",
+            "csA26qg5YSsji1ZZ",
+            "flags.grants.disadvantage.attack",
+            "other creatures have Disadvantage on attack rolls against them",
+        ),
+    ],
+)
+def test_an_attack_grant_follows_its_sentence(
+    slug: str, effect_id: str, key: str, sentence: str
+) -> None:
+    spell = LOADER.get_spell(slug)
+    assert spell is not None
+    assert sentence in spell.description
+    grant = PassiveEffectChange(key=key, mode=5, value="1")
+    assert grant in _effect(slug, effect_id).changes
+    assert _EFFECT_CHANGE_CORRECTIONS[(slug, effect_id)] == [grant]
 
 
 def test_every_correction_reached_the_corpus() -> None:

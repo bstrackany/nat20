@@ -125,6 +125,9 @@
       "description": "<p>If the target is a creature, it enters a state of suspended animation; it has the &amp;Reference[Unconscious apply=false] condition, doesn\u2019t age, and doesn\u2019t need food, water, or air. This spell also ends if the target takes any damage.</p>",
       "disabled": false,
       "duration": null,
+      "ends_on": [
+        "takes_damage"
+      ],
       "id": "DWu3UoqOICFFQA1W",
       "name": "Sequestered",
       "statuses": [

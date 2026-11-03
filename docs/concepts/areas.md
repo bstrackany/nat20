@@ -8,12 +8,12 @@ they surround. The engine keeps all of these as **areas**.
 
 An area is one of two kinds:
 
-- **placed**: it stays at its point of origin (Fog Cloud, Darkness, Grease, Web,
-  Sleet Storm, Entangle, Spike Growth, Stinking Cloud, Moonbeam, Silence, Black
-  Tentacles, Insect Plague, Incendiary Cloud), unless the spell moves it
-  (Moonbeam, Cloudkill);
-- **anchored**: it surrounds a creature and moves with it (Spirit Guardians, Aura
-  of Protection).
+- **placed**: it stays at its point of origin (Fog Cloud, Darkness, Daylight,
+  Grease, Web, Sleet Storm, Entangle, Spike Growth, Stinking Cloud, Moonbeam,
+  Silence, Black Tentacles, Insect Plague, Incendiary Cloud, Earthquake), unless
+  the spell moves it (Moonbeam, Cloudkill);
+- **anchored**: it surrounds a creature and moves with it (Spirit Guardians,
+  Conjure Woodland Beings, Holy Aura, Aura of Protection).
 
 ## The data
 
@@ -37,13 +37,13 @@ Fog Cloud's `20 * @item.level`, Aura of Protection's `@scale.paladin.aura`.
 |---|---|---|
 | `map.obscurement` | `light` / `heavy` on the area's cells | Web; Fog Cloud, Sleet Storm, Stinking Cloud, Darkness |
 | `map.lighting` | `bright` / `dim` / `dark` on the area's cells | Daylight; Moonbeam; Darkness |
-| `map.difficult_terrain` | the cells are Difficult Terrain | Grease, Web, Sleet Storm, Entangle, Spike Growth |
+| `map.difficult_terrain` | the cells are Difficult Terrain | Grease, Web, Sleet Storm, Entangle, Spike Growth, Earthquake |
 | `map.blocks_verbal` | a spell with a Verbal component can't be cast from inside | Silence |
-| `effects` | ids of the entry's own `passive_effects` that apply to a creature while it is in the area | Aura of Protection's save bonus, Silence's Thunder immunity |
-| `affects` | who those effects reach: `all` (default), `ally` (the owner included), `enemy` | Aura of Protection; Silence; homebrew auras |
+| `effects` | ids of the entry's own `passive_effects` that apply to a creature while it is in the area | Aura of Protection's save bonus, Silence's Thunder immunity, Holy Aura's save Advantage and attackers' Disadvantage |
+| `affects` | who those effects reach: `all` (default), `ally` (the owner included), `enemy` | Aura of Protection, Holy Aura; Silence; Spirit Guardians, Conjure Woodland Beings |
 | `inactive_while_incapacitated` | the effects are off while the creature the area surrounds is Incapacitated | Aura of Protection |
 | `triggers` | the moments the area fires an activity at a creature (below) | Moonbeam, Grease, Web, Sleet Storm, Spike Growth, Stinking Cloud, Spirit Guardians, Black Tentacles, Insect Plague, Cloudkill, Incendiary Cloud |
-| `fires` | the activity it fires, when not the one that makes the area (that activity carries `trigger.kind: area`, so the cast doesn't resolve it) | Stinking Cloud's "Start of Turn Save", Spirit Guardians' "Emanation Save", Incendiary Cloud's "Per Turn Save" |
+| `fires` | the activity it fires, when not the one that makes the area (that activity carries `trigger.kind: area`, so the cast doesn't resolve it) | Stinking Cloud's "Start of Turn Save", Spirit Guardians' and Conjure Woodland Beings' "Emanation Save", Incendiary Cloud's "Per Turn Save" |
 | `once_per_turn` | a creature makes the save "only once per turn", in any creature's turn | Moonbeam, Spirit Guardians; Web and Sleet Storm ("the first time ... on a turn") |
 | `breaks_concentration` | a creature that fails the save loses Concentration | Sleet Storm |
 | `move_ft` | on a later turn the owner can take a Magic action to move the placed area that far | Moonbeam (60) |
@@ -54,7 +54,9 @@ With `all`, that is whoever is in the area, the caster included: a Moonbeam
 or Stinking Cloud over its caster catches it, and one elsewhere never does.
 Spirit Guardians is `enemy`: "you can designate creatures to be unaffected"
 is modelled as the caster and its allies, so neither saves nor has its Speed
-halved.
+halved. Conjure Woodland Beings' "you can force that creature to make a Wisdom
+saving throw" is `enemy` the same way (its "creature you can see" is not
+checked), and Holy Aura's "creatures of your choice" is `ally`.
 
 Defaults are left out when the data is written, so an area that only changes the
 map is written as `{"map": {...}}`. An `area` on a `wall` template is refused
@@ -225,6 +227,9 @@ carries the fields above plus `source_kind`, `source_name`, `map`, `affects` and
   move (a homebrew rift).
 - One area firing different activities at different moments (a homebrew zone:
   cold at the start of a turn, an acid save at its end).
+- A save the area makes "at the end of each of your turns" — the caster's turn,
+  for everyone in it (Earthquake), and Daylight's Dim Light ring beyond its
+  Sphere.
 - A teleport into an area (no engine teleport exists yet).
 - An enemy an area drops at a turn's end isn't read by `enemy_falls`
   triggers: the moment sweep runs before the area hook.

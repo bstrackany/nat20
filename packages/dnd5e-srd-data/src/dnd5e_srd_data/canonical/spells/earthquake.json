@@ -9,6 +9,11 @@
         "value": null
       },
       "applied_effects": [],
+      "area": {
+        "map": {
+          "difficult_terrain": true
+        }
+      },
       "consumption": {
         "scaling": {
           "allowed": false,

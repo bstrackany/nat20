@@ -145,6 +145,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **SRD pass: more entries marked with the new fields**, each from its own SRD
+  5.2 sentence. `ends_on`: Sanctuary, Potion of Invisibility and Dust of
+  Disappearance (`attacks`, `deals_damage`, `casts_spell`); Sleep, Eyebite's
+  Asleep, Symbol's Sleep, Modify Memory, Sequester, Lolth's Sting's
+  Unconscious, Turn Undead, Abjure Foes and Devious Strikes' Knock Out
+  (`takes_damage`); Gaseous Form (`zero_hp`); Guiding Bolt (`is_attacked`).
+  `until` (new table `_EFFECT_UNTIL`; it replaces a `rounds: 1` that ended the
+  effect with the caster's own turn): Guiding Bolt and Color Spray
+  (`end_of_next_turn`), Shield, Ray of Frost, Sunbeam, Flesh to Stone's
+  successful save, Hamstring Blow, Frost's Chill and Stunning Strike
+  (`start_of_next_turn`), Nature's Veil (`end_of_next_turn`), Stinking Cloud's
+  Poisoned and the thirteen Superior Hunter's Defense resistances
+  (`end_of_turn`). The feature and generic-item translators now apply
+  `_EFFECT_ENDINGS` / `_EFFECT_UNTIL` too. `_EFFECT_CHANGE_CORRECTIONS` adds
+  the attack grant Guiding Bolt, Shining Smite (Advantage) and Holy Aura
+  (Disadvantage) state. `_AREAS`: Daylight (Bright Light), Earthquake
+  (Difficult Terrain), Holy Aura (its save Advantage and attackers'
+  Disadvantage, `affects: ally`) and Conjure Woodland Beings (`enters` /
+  `turn_end` / `moved_onto`, once per turn, `affects: enemy`, firing its
+  Emanation Save, which `_ACTIVITY_TRIGGERS` marks `area`); Holy Aura's
+  Fiend/Undead save is `later_use`, so the cast no longer makes the caster save
+  against its own Blinded. Canonical: 30 files (19 spells, 8 features, 3
+  items).
 - **Haste's "Apply Lethargy" is a `later_use`** ("When the spell ends, the
   target is Incapacitated and has a Speed of 0"): the cast no longer applies
   the lethargy with the haste.

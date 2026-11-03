@@ -170,7 +170,8 @@
       "id": "YHKgdj2KIbQRBZWW",
       "name": "Chilled",
       "statuses": [],
-      "transfer": false
+      "transfer": false,
+      "until": "start_of_next_turn"
     }
   ],
   "provenance": {

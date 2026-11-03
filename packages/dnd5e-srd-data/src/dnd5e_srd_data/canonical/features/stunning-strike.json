@@ -139,7 +139,8 @@
       "statuses": [
         "stunned"
       ],
-      "transfer": false
+      "transfer": false,
+      "until": "start_of_next_turn"
     },
     {
       "changes": [],

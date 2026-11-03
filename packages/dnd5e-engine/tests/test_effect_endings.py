@@ -166,6 +166,31 @@ def test_invisibility_ends_when_its_bearer_attacks_not_when_it_is_cast_or_attack
     assert "invisible" not in live.active_conditions.get(B, set())
 
 
+def test_guiding_bolts_advantage_is_spent_by_the_next_attack_against_its_target():
+    """SRD 5.2 Guiding Bolt: "the next attack roll made against it before the end
+    of your next turn has Advantage" — it outlasts the caster's own turn."""
+    hero = pc("char:hero", initiative=10, zone_id="0,1", strength=18, attack_bonus=10)
+    for seed in range(1, 10):
+        handle, live = start([caster(["guiding-bolt"], {1: 1}), hero], seed=seed)
+        cast(handle, "guiding-bolt", target_id="mon:foe", slot_level=1)
+        marked = [e for e in events(live, EffectApplied) if e.effect.name == "Guiding Bolt"]
+        if marked:
+            break
+    else:
+        pytest.fail("no seed hit with the bolt")
+    assert marked[0].effect.flags == {
+        "ends_on": ["is_attacked"],
+        "until_end_of_next_turn_of": B,
+    }
+    assert not events(live, EffectExpired)  # the caster's turn ended; the mark stands
+    act(handle, "char:hero", intent_type="attack", weapon_id="longsword", target_id="mon:foe")
+    [swing] = [a for a in events(live, AttackRolled) if a.attacker_id == "char:hero"]
+    assert "grant:target" in swing.advantage_sources
+    [ended] = events(live, EffectExpired)
+    assert ended.effect_id == marked[0].effect.id
+    assert live.event_log.index(swing) < live.event_log.index(ended)
+
+
 def _apply(live: _LiveCombat, flags: dict[str, Any], bearer: str = B) -> tuple[str, str, str]:
     """Land an effect now (as a reaction would, on whoever's turn it is)."""
     effect = passive_effect_to_active_effect(

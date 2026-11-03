@@ -54,14 +54,24 @@ and the effect carries it into combat as flags:
   `is_attacked` (an attack roll is made against it), `saves` (a saving throw,
   the concentration check included), `checks` (an ability check),
   `takes_damage`, `deals_damage`, `zero_hp` (drops to 0 Hit Points) and
-  `casts_spell`. SRD 5.2 Invisibility ships `attacks`, `deals_damage` and
-  `casts_spell`; Hypnotic Pattern ships `takes_damage`.
+  `casts_spell`. SRD 5.2 Invisibility, Sanctuary, Potion of Invisibility and
+  Dust of Disappearance ship `attacks`, `deals_damage` and `casts_spell`;
+  Hypnotic Pattern, Sleep, Eyebite's Asleep, Symbol's Sleep, Modify Memory,
+  Sequester, Lolth's Sting's Unconscious, Turn Undead, Abjure Foes and Knock Out
+  ship `takes_damage`; Gaseous Form ships `zero_hp`; Guiding Bolt ships
+  `is_attacked`. A clause the events can't say (Turn Undead's "if you have the
+  Incapacitated condition") is left to the host.
 - `PassiveEffect.until` → a turn boundary, which then replaces the timed
   `duration`: `start_of_next_turn` (`flags["until_start_of_next_turn_of"]`,
   ends as the applying creature's next turn starts — Shield), `end_of_next_turn`
   (the `until_end_of_next_turn_of` flag above — Guiding Bolt) and `end_of_turn`
   (`flags["until_end_of_turn"]`, ends with the turn under way when it landed —
-  Stinking Cloud).
+  Stinking Cloud). The SRD corpus also marks Color Spray, Flesh to Stone's
+  successful save, Ray of Frost, Sunbeam, Brutal Strike's Hamstring Blow,
+  Frost's Chill, Nature's Veil, Stunning Strike and Superior Hunter's Defense.
+  "Your next turn" is always the applying creature's: SRD's "until the end of
+  its next turn" (Vicious Mockery, Holy Aura's Blinded) has no `until` and keeps
+  Foundry's own counter.
 
 The engine reads the typed events after each resolution (the end of
 `_fire_resolution_triggers`) and over the whole turn at its end, for a save or

@@ -144,6 +144,12 @@
           "mode": 2,
           "priority": null,
           "value": "invisible"
+        },
+        {
+          "key": "flags.grants.advantage.attack",
+          "mode": 5,
+          "priority": null,
+          "value": "1"
         }
       ],
       "description": "<p>Until the spell ends, the target sheds &amp;Reference[BrightLight] in a 5-foot radius, attack rolls against it have Advantage, and it can\u2019t benefit from the &amp;Reference[Invisible] condition.</p>",

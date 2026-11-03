@@ -217,6 +217,11 @@
       "duration": {
         "seconds": 60
       },
+      "ends_on": [
+        "attacks",
+        "casts_spell",
+        "deals_damage"
+      ],
       "id": "OuM8iKhckcDKavOx",
       "name": "Warded",
       "statuses": [],

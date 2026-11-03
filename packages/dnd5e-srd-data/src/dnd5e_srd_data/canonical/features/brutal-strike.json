@@ -148,7 +148,8 @@
       "id": "bg9jWpPRIJ0Q2vPY",
       "name": "Hamstrung",
       "statuses": [],
-      "transfer": false
+      "transfer": false,
+      "until": "start_of_next_turn"
     }
   ],
   "provenance": {

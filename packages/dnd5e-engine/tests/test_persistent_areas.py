@@ -30,8 +30,10 @@ from dnd5e_engine.events import (
     AreaCreated,
     AreaEnded,
     AreaMoved,
+    AttackRolled,
     CastFailed,
     ConditionApplied,
+    SaveRolled,
     SpellCast,
 )
 from dnd5e_engine.lib_loader import set_lib_loader_for_tests
@@ -43,6 +45,7 @@ from dnd5e_engine.orchestrator import (
     _find_combatant,
     _LiveCombat,
     _sync_areas,
+    advance_monster_turn,
     get_live,
     push_combatant,
 )
@@ -59,7 +62,7 @@ from tests.e2e.harness import cell, events_of, run_async
 from tests.fork_support import BUNDLED, WithAssets, caster, goblin, homebrew_feat
 from tests.test_c16_orchestrator import _cast, _mon, _wiz
 
-SLOTS = {1: 4, 2: 4, 3: 4, 4: 4}
+SLOTS = {1: 4, 2: 4, 3: 4, 4: 4, 8: 1}
 
 
 @pytest.fixture(autouse=True)
@@ -225,6 +228,38 @@ def test_an_emanation_follows_its_caster_and_ends_with_concentration() -> None:
     assert [("3,5" in m.cells, "3,6" in m.cells) for m in moved] == [(True, False), (True, True)]
     act(handle, "char:caster", intent_type="drop_concentration")
     assert [e.area_id for e in events(live, AreaEnded)] == [created.area_id]
+
+
+def test_holy_aura_shields_the_casters_side() -> None:
+    """SRD 5.2 Holy Aura: "you emit an aura in a 30-foot Emanation. While in the
+    aura, creatures of your choice have Advantage on all saving throws, and other
+    creatures have Disadvantage on attack rolls against them." The Fiend/Undead
+    save is not part of the cast."""
+    ally = pc("char:ally", zone_id="0,1", initiative=10)
+    handle, live = start([caster(["holy-aura"], {8: 1}), ally], seed=2, encounter=[goblin()])
+    act(handle, "char:caster", intent_type="cast_spell", spell_id="holy-aura", slot_level=8)
+    [created] = events(live, AreaCreated)
+    assert (created.source_id, created.kind, created.anchor_id) == (
+        "holy-aura",
+        "anchored",
+        "char:caster",
+    )
+    assert not events(live, SaveRolled)
+    assert [e.name for e in _area_effects_on(live, "char:ally")] == ["Holy Protection"]
+    assert _area_effects_on(live, "mon:foe") == []
+    act(handle, "char:ally", intent_type="pass")
+    run_async(advance_monster_turn(handle))
+    swings = [a for a in events(live, AttackRolled) if a.attacker_id == "mon:foe"]
+    assert swings
+    assert all("grant:target" in a.disadvantage_sources for a in swings)
+
+
+def test_earthquakes_ground_is_difficult_terrain() -> None:
+    """SRD 5.2 Earthquake: "The ground there is Difficult Terrain." """
+    _handle, live = _cast_area("earthquake", target_zone_id="5,5", slot_level=8)
+    [created] = events(live, AreaCreated)
+    assert (created.source_id, created.kind) == ("earthquake", "placed")
+    assert live.topology.edge_distance("4,4", "5,5") == 10
 
 
 def _paladin(entity_id: str, cha: int, at: str, initiative: int = 20) -> Any:

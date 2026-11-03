@@ -327,6 +327,9 @@
       "duration": {
         "seconds": 60
       },
+      "ends_on": [
+        "takes_damage"
+      ],
       "id": "C2IGgt4PnRMxZVey",
       "name": "Devious Strikes: Knocked Out",
       "statuses": [

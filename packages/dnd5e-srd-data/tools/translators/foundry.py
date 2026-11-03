@@ -42,6 +42,7 @@ from dnd5e_srd_data import (
     DamageReduction,
     DamageReductionMode,
     EffectEndEvent,
+    EffectUntil,
     EnchantActivity,
     Feat,
     FeatCategory,
@@ -2042,8 +2043,9 @@ def translate_generic_item_yaml(
     requires_attunement, attunement_constraint = _attunement(system)
     rarity = _rarity(doc)
 
+    slug = _slug(doc, yaml_path)
     base_kwargs: dict[str, Any] = dict(
-        slug=_slug(doc, yaml_path),
+        slug=slug,
         name=doc.get("name", ""),
         description=_description(doc),
         weight=_weight(system),
@@ -2052,7 +2054,7 @@ def translate_generic_item_yaml(
         provenance=_provenance(yaml_path, ingest_date, ingest_version),
         review=ReviewState(),
         activities=_translate_activities(system),
-        passive_effects=_passive_effects(doc),
+        passive_effects=_apply_effect_endings(slug, _passive_effects(doc)),
         requires_attunement=requires_attunement,
         attunement_constraint=attunement_constraint,
         uses=_item_uses(system),
@@ -2375,6 +2377,14 @@ _ACTIVITY_TRIGGERS: dict[tuple[str, str], ActivityTrigger] = {
     # "A creature must also make this save when the Sphere moves into its space
     # and when it enters the Sphere or ends its turn there."
     ("incendiary-cloud", "lLAC6qfRLaes7956"): ActivityTrigger(kind=ActivityTriggerKind.AREA),
+    # "whenever a creature you can see enters the Emanation or ends its turn
+    # there, you can force that creature to make a Wisdom saving throw"
+    ("conjure-woodland-beings", "UkXLSgFbCBI9CHMf"): ActivityTrigger(kind=ActivityTriggerKind.AREA),
+    # "when a Fiend or an Undead hits an affected creature with a melee attack
+    # roll, the attacker must succeed on a Constitution saving throw" — not with
+    # the cast (which made the caster save against its own Blinded); no moment
+    # names a hit on a creature in an area, so it is the host's to fire.
+    ("holy-aura", "0kylpwRauH0WgW0G"): ActivityTrigger(kind=ActivityTriggerKind.LATER_USE),
 }
 
 
@@ -2391,6 +2401,21 @@ _EFFECT_CHANGE_CORRECTIONS: dict[tuple[str, str], list[PassiveEffectChange]] = {
     # "Attack rolls against an affected creature or object have Advantage"
     ("faerie-fire", "Y2i0OvwOixxag0ed"): [
         PassiveEffectChange(key="flags.grants.advantage.attack", mode=5, value="1")
+    ],
+    # "the next attack roll made against it before the end of your next turn has
+    # Advantage" (the ending is in ``_EFFECT_ENDINGS`` / ``_EFFECT_UNTIL``)
+    ("guiding-bolt", "rHzZCeXfdeTcYyk8"): [
+        PassiveEffectChange(key="flags.grants.advantage.attack", mode=5, value="1")
+    ],
+    # "Until the spell ends, ... attack rolls against it have Advantage"
+    ("shining-smite", "pBjrcT286iCAQrjm"): [
+        PassiveEffectChange(key="flags.grants.advantage.attack", mode=5, value="1")
+    ],
+    # "While in the aura, creatures of your choice have Advantage on all saving
+    # throws, and other creatures have Disadvantage on attack rolls against them"
+    # (the effect reaches them through the spell's area, ``_AREAS``)
+    ("holy-aura", "csA26qg5YSsji1ZZ"): [
+        PassiveEffectChange(key="flags.grants.disadvantage.attack", mode=5, value="1")
     ],
 }
 
@@ -2529,9 +2554,11 @@ def _apply_effect_status_corrections(
     return out
 
 
-#: ``(spell slug, effect _id)`` → the events that end the effect on its bearer
-#: (``PassiveEffect.ends_on``), which the pinned Foundry source leaves to a module
-#: (DAE's special durations) and so does not carry.
+#: ``(spell, feature or item slug, effect _id)`` → the events that end the effect
+#: on its bearer (``PassiveEffect.ends_on``), which the pinned Foundry source
+#: leaves to a module (DAE's special durations) and so does not carry. A clause
+#: the events can't say (Turn Undead's "if you have the Incapacitated
+#: condition", Modify Memory's "is targeted by another spell") stays prose.
 _EFFECT_ENDINGS: dict[tuple[str, str], list[EffectEndEvent]] = {
     # "The spell ends early immediately after the target makes an attack roll,
     # deals damage, or casts a spell."
@@ -2542,17 +2569,122 @@ _EFFECT_ENDINGS: dict[tuple[str, str], list[EffectEndEvent]] = {
     ],
     # "The spell ends for an affected creature if it takes any damage"
     ("hypnotic-pattern", "mjAs8ssQlgp0AQOp"): [EffectEndEvent.TAKES_DAMAGE],
+    # "the next attack roll made against it before the end of your next turn has
+    # Advantage"
+    ("guiding-bolt", "rHzZCeXfdeTcYyk8"): [EffectEndEvent.IS_ATTACKED],
+    # "The spell ends if the warded creature makes an attack roll, casts a
+    # spell, or deals damage."
+    ("sanctuary", "OuM8iKhckcDKavOx"): [
+        EffectEndEvent.ATTACKS,
+        EffectEndEvent.CASTS_SPELL,
+        EffectEndEvent.DEALS_DAMAGE,
+    ],
+    # "The spell ends on the target if it drops to 0 Hit Points"
+    ("gaseous-form", "QeYsfnjEj2T9A3C8"): [EffectEndEvent.ZERO_HP],
+    # "The spell ends on a target if it takes damage"
+    ("sleep", "04Wa4xUzjA31kPno"): [EffectEndEvent.TAKES_DAMAGE],
+    # Asleep: "It wakes up if it takes any damage"
+    ("eyebite", "5btX5iwwleMMzkvj"): [EffectEndEvent.TAKES_DAMAGE],
+    # Sleep: "A creature awakens if it takes damage"
+    ("symbol", "A1VA7t5gB7ODNsr6"): [EffectEndEvent.TAKES_DAMAGE],
+    # "If it takes any damage or is targeted by another spell, this spell ends"
+    ("modify-memory", "ayfixWGhTtaIUusk"): [EffectEndEvent.TAKES_DAMAGE],
+    # "This spell also ends if the target takes any damage."
+    ("sequester", "DWu3UoqOICFFQA1W"): [EffectEndEvent.TAKES_DAMAGE],
+    # "the Frightened condition for 1 minute or until it takes any damage"
+    ("abjure-foes", "iY8KgqafX22tiBVw"): [EffectEndEvent.TAKES_DAMAGE],
+    # Turn Undead: "This effect ends early on the creature if it takes any damage"
+    ("channel-divinity-cleric", "iUeSbfduM7K8XrCF"): [EffectEndEvent.TAKES_DAMAGE],
+    # Knock Out: "the Unconscious condition for 1 minute or until it takes any
+    # damage"
+    ("devious-strikes", "C2IGgt4PnRMxZVey"): [EffectEndEvent.TAKES_DAMAGE],
+    # "Immediately after an affected creature makes an attack roll, deals
+    # damage, or casts a spell, the Invisible condition ends for that creature."
+    ("dust-of-disappearance", "MC5GAZMrAc4wSvAS"): [
+        EffectEndEvent.ATTACKS,
+        EffectEndEvent.DEALS_DAMAGE,
+        EffectEndEvent.CASTS_SPELL,
+    ],
+    # "The effect ends early if you make an attack roll, deal damage, or cast a
+    # spell."
+    ("potion-of-invisibility", "tsRnLFf1HtqAPphv"): [
+        EffectEndEvent.ATTACKS,
+        EffectEndEvent.DEALS_DAMAGE,
+        EffectEndEvent.CASTS_SPELL,
+    ],
+    # Unconscious: "The creature wakes up if it takes damage" (Essence of Ether
+    # and Oil of Taggit ship Poisoned and Unconscious as one effect, and waking
+    # doesn't end the Poisoned, so they stay unmarked)
+    ("spiders-sting", "zEQTKqd3uBj660cR"): [EffectEndEvent.TAKES_DAMAGE],
+}
+
+
+#: ``(spell, feature or item slug, effect _id)`` → the turn boundary that ends
+#: the effect (``PassiveEffect.until``), in place of the round or turn counter
+#: Foundry ships (a ``rounds: 1`` applied on the caster's turn ends with that
+#: turn). Only "your next turn" — the applying creature's — and "the current
+#: turn" are expressible; "its next turn" (Holy Aura's Blinded, Vicious
+#: Mockery) is the bearer's and stays on Foundry's counter.
+_EFFECT_UNTIL: dict[tuple[str, str], EffectUntil] = {
+    # "the next attack roll made against it before the end of your next turn"
+    ("guiding-bolt", "rHzZCeXfdeTcYyk8"): "end_of_next_turn",
+    # "have the Blinded condition until the end of your next turn"
+    ("color-spray", "DKl58EVNaSX976co"): "end_of_next_turn",
+    # "On a successful save, its Speed is 0 until the start of your next turn."
+    ("flesh-to-stone", "sFyjp6wt9bjyIl9W"): "start_of_next_turn",
+    # "its Speed is reduced by 10 feet until the start of your next turn"
+    ("ray-of-frost", "7dnnwBMWLykrVJub"): "start_of_next_turn",
+    # "Until the start of your next turn, you have a +5 bonus to AC"
+    ("shield", "Bv3EoHGfYCprLdG1"): "start_of_next_turn",
+    # "has the Blinded condition until the start of your next turn"
+    ("sunbeam", "RZmnRyi6pyjIRN1i"): "start_of_next_turn",
+    # "have the Poisoned condition until the end of the current turn"
+    ("stinking-cloud", "gFid0DG5HydORpr3"): "end_of_turn",
+    # Hamstring Blow: "The target's Speed is reduced by 15 feet until the start
+    # of your next turn."
+    ("brutal-strike", "bg9jWpPRIJ0Q2vPY"): "start_of_next_turn",
+    # "reduce its Speed by 10 feet until the start of your next turn"
+    ("frosts-chill", "YHKgdj2KIbQRBZWW"): "start_of_next_turn",
+    # "you can give yourself the Invisible condition until the end of your next
+    # turn"
+    ("natures-veil", "NOSQczI2MCQ5Ha8F"): "end_of_next_turn",
+    # "On a failed save, the target has the Stunned condition until the start of
+    # your next turn."
+    ("stunning-strike", "vofnieSTB0l8rpRg"): "start_of_next_turn",
+    # "give yourself Resistance to that damage and any other damage of the same
+    # type until the end of the current turn" — one effect per damage type
+    **{
+        ("superior-hunters-defense", effect_id): "end_of_turn"
+        for effect_id in (
+            "jZGIulxQFLY7uRDe",
+            "HybTLXiZgGa3t61e",
+            "6z5fLOHiOiHHcuac",
+            "DW6JJBsbBtR1Z75R",
+            "2kTlaPSpacxduIm7",
+            "5ZizSWuVy8cy77K1",
+            "fcFLysPw4llFTQsg",
+            "8Uf0Dw8A3l7CI8Fd",
+            "PpWYucbhugNEIBJ7",
+            "BbvC3rh4RDmi06XI",
+            "IFg9ae4ZyhMDPa3m",
+            "30KWef6vBjF8RChr",
+            "P7YUT6Y1NXGpo5Er",
+        )
+    },
 }
 
 
 def _apply_effect_endings(slug: str, effects: list[PassiveEffect]) -> list[PassiveEffect]:
-    """Set each effect's ``ends_on`` from ``_EFFECT_ENDINGS``. Copy-on-write
-    like ``_apply_effect_status_corrections``."""
+    """Set each effect's ``ends_on`` from ``_EFFECT_ENDINGS`` and ``until`` from
+    ``_EFFECT_UNTIL``. Copy-on-write like ``_apply_effect_status_corrections``."""
     out: list[PassiveEffect] = []
     for effect in effects:
         ends_on = _EFFECT_ENDINGS.get((slug, effect.id))
         if ends_on:
             effect = effect.model_copy(update={"ends_on": list(ends_on)})
+        until = _EFFECT_UNTIL.get((slug, effect.id))
+        if until:
+            effect = effect.model_copy(update={"until": until})
         out.append(effect)
     return out
 
@@ -2805,6 +2937,32 @@ _AREAS: dict[tuple[str, str], PersistentArea] = {
     ("aura-of-protection", "nwLsJcC3bXA6i7QZ"): PersistentArea(
         effects=["WOJ5r71FCDRmElea"], affects="ally", inactive_while_incapacitated=True
     ),
+    # "sunlight spreads from a point within range and fills a 60-foot-radius
+    # Sphere. The sunlight's area is Bright Light" (its Dim Light ring beyond,
+    # and the cast on an object, are not modelled)
+    ("daylight", "dnd5eactivity000"): PersistentArea(map=AreaMap(lighting="bright")),
+    # "For the duration, you emit an aura in a 30-foot Emanation. While in the
+    # aura, creatures of your choice have Advantage on all saving throws, and
+    # other creatures have Disadvantage on attack rolls against them" — the
+    # chosen creatures are the caster's side, as with Spirit Guardians.
+    ("holy-aura", "jbvvkjZ7szK9wjeA"): PersistentArea(effects=["csA26qg5YSsji1ZZ"], affects="ally"),
+    # "nature spirits that flit around you in a 10-foot Emanation for the
+    # duration. Whenever the Emanation enters the space of a creature you can
+    # see and whenever a creature you can see enters the Emanation or ends its
+    # turn there, you can force that creature to make a Wisdom saving throw. ...
+    # A creature makes this save only once per turn." — forced on the caster's
+    # enemies; "you can see" is not checked.
+    ("conjure-woodland-beings", "dnd5eactivity000"): PersistentArea(
+        affects="enemy",
+        triggers=[AreaTrigger.ENTERS, AreaTrigger.TURN_END, AreaTrigger.MOVED_ONTO],
+        fires="UkXLSgFbCBI9CHMf",
+        once_per_turn=True,
+    ),
+    # "an intense tremor rips through the ground in a 100-foot-radius circle
+    # centered on that point. The ground there is Difficult Terrain." (the
+    # repeat save "at the end of each of your turns" is the caster's turn, which
+    # no area moment is, and fissures and structures are not modelled)
+    ("earthquake", "Z1voDdIYLdJfGwMH"): PersistentArea(map=AreaMap(difficult_terrain=True)),
 }
 
 
@@ -3706,8 +3864,11 @@ def translate_feature_yaml(
                 slug, _apply_damage_reductions(slug, _translate_activities(system))
             ),
         ),
-        passive_effects=_apply_active_while(
-            slug, _apply_feature_effect_value_corrections(slug, _passive_effects(doc))
+        passive_effects=_apply_effect_endings(
+            slug,
+            _apply_active_while(
+                slug, _apply_feature_effect_value_corrections(slug, _passive_effects(doc))
+            ),
         ),
         advancement=_advancement(system),
         uses=_feature_uses(system),

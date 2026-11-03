@@ -188,6 +188,9 @@
       "duration": {
         "seconds": 3600
       },
+      "ends_on": [
+        "zero_hp"
+      ],
       "id": "QeYsfnjEj2T9A3C8",
       "name": "Gaseous Form",
       "statuses": [

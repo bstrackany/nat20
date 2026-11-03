@@ -122,7 +122,8 @@
       "statuses": [
         "invisible"
       ],
-      "transfer": true
+      "transfer": true,
+      "until": "end_of_next_turn"
     }
   ],
   "provenance": {

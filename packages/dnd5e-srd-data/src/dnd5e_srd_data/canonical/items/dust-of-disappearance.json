@@ -116,6 +116,11 @@
       "description": "<p><em>Source: @UUID[Compendium.dnd5e.equipment24.Item.dmgDustOfDisappe]{Dust of Disappearance}</em></p><p>You have the &amp;Reference[Invisible] condition for 2d4 minutes or until you make an attack roll, deal damage, or cast a spell.</p>",
       "disabled": false,
       "duration": null,
+      "ends_on": [
+        "attacks",
+        "deals_damage",
+        "casts_spell"
+      ],
       "id": "MC5GAZMrAc4wSvAS",
       "name": "Invisible",
       "statuses": [

@@ -290,7 +290,8 @@
       "statuses": [
         "blinded"
       ],
-      "transfer": false
+      "transfer": false,
+      "until": "start_of_next_turn"
     }
   ],
   "preparation": {

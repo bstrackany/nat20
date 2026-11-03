@@ -195,7 +195,8 @@
       "id": "sFyjp6wt9bjyIl9W",
       "name": "Unable to Move",
       "statuses": [],
-      "transfer": false
+      "transfer": false,
+      "until": "start_of_next_turn"
     }
   ],
   "preparation": {

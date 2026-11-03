@@ -126,10 +126,12 @@ _TABLE = [
     ("vampiric-touch", "dnd5eactivity000", "Until the spell ends", _later(True)),
     ("telekinesis", "ntGShpXYlBqLMZmK", "on your later turns", _later(True)),
     ("haste", "rBQrZnq7cHkSUAK9", "When the spell ends", _later()),
+    ("holy-aura", "0kylpwRauH0WgW0G", "when a Fiend or an Undead hits", _later()),
     # the activities an area fires (``PersistentArea.fires``), not the cast
     ("stinking-cloud", "dnd5eactivity000", "starts its turn in the Sphere", _AREA),
     ("spirit-guardians", "dnd5eactivity000", "whenever the Emanation enters", _AREA),
     ("incendiary-cloud", "lLAC6qfRLaes7956", "when the Sphere moves into its space", _AREA),
+    ("conjure-woodland-beings", "UkXLSgFbCBI9CHMf", "enters the Emanation or ends its", _AREA),
 ]
 
 
@@ -163,7 +165,8 @@ def test_a_triggered_save_keeps_its_damage_rule() -> None:
 
 def test_every_trigger_in_the_table_reached_the_corpus_and_nothing_else_has_one() -> None:
     shipped: dict[tuple[str, str], ActivityTrigger] = {}
-    for path in sorted((CANONICAL / "spells").glob("*.json")):
+    paths = [*(CANONICAL / "spells").glob("*.json"), *(CANONICAL / "features").glob("*.json")]
+    for path in sorted(paths):
         data = json.loads(path.read_text(encoding="utf-8"))
         for activity in data["activities"]:
             if "trigger" in activity:

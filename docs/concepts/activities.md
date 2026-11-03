@@ -86,8 +86,9 @@ before a use was held (the use's own cast) is not its moment. A hit's rider
 counts (Hex's extra damage that drops the creature is the caster reducing it);
 what an activity fired on one of these four moments emits fires none of them.
 
-A `later_use` activity (Sunbeam's new line, Haste's lethargy) only keeps the
-cast from resolving it; re-firing one is not supported, and a `cast_spell`
+A `later_use` activity (Sunbeam's new line, Haste's lethargy, Holy Aura's save
+for a Fiend or Undead that hits a creature in the aura) only keeps the cast
+from resolving it; re-firing one is not supported, and a `cast_spell`
 naming it in `activity_id` is refused with `activity_invalid`.
 
 An activity with no trigger behaves exactly as before, so content that never

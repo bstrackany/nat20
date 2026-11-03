@@ -151,7 +151,8 @@
       "id": "Bv3EoHGfYCprLdG1",
       "name": "Imperceptible Barrier",
       "statuses": [],
-      "transfer": false
+      "transfer": false,
+      "until": "start_of_next_turn"
     }
   ],
   "preparation": {

@@ -232,7 +232,8 @@
       "id": "jZGIulxQFLY7uRDe",
       "name": "Hunter's Defense: Acid",
       "statuses": [],
-      "transfer": false
+      "transfer": false,
+      "until": "end_of_turn"
     },
     {
       "changes": [
@@ -251,7 +252,8 @@
       "id": "HybTLXiZgGa3t61e",
       "name": "Hunter's Defense: Bludgeoning",
       "statuses": [],
-      "transfer": false
+      "transfer": false,
+      "until": "end_of_turn"
     },
     {
       "changes": [
@@ -270,7 +272,8 @@
       "id": "6z5fLOHiOiHHcuac",
       "name": "Hunter's Defense: Cold",
       "statuses": [],
-      "transfer": false
+      "transfer": false,
+      "until": "end_of_turn"
     },
     {
       "changes": [
@@ -289,7 +292,8 @@
       "id": "DW6JJBsbBtR1Z75R",
       "name": "Hunter's Defense: Fire",
       "statuses": [],
-      "transfer": false
+      "transfer": false,
+      "until": "end_of_turn"
     },
     {
       "changes": [
@@ -308,7 +312,8 @@
       "id": "2kTlaPSpacxduIm7",
       "name": "Hunter's Defense: Force",
       "statuses": [],
-      "transfer": false
+      "transfer": false,
+      "until": "end_of_turn"
     },
     {
       "changes": [
@@ -327,7 +332,8 @@
       "id": "5ZizSWuVy8cy77K1",
       "name": "Hunter's Defense: Lightning",
       "statuses": [],
-      "transfer": false
+      "transfer": false,
+      "until": "end_of_turn"
     },
     {
       "changes": [
@@ -346,7 +352,8 @@
       "id": "fcFLysPw4llFTQsg",
       "name": "Hunter's Defense: Necrotic",
       "statuses": [],
-      "transfer": false
+      "transfer": false,
+      "until": "end_of_turn"
     },
     {
       "changes": [
@@ -365,7 +372,8 @@
       "id": "8Uf0Dw8A3l7CI8Fd",
       "name": "Hunter's Defense: Piercing",
       "statuses": [],
-      "transfer": false
+      "transfer": false,
+      "until": "end_of_turn"
     },
     {
       "changes": [
@@ -384,7 +392,8 @@
       "id": "PpWYucbhugNEIBJ7",
       "name": "Hunter's Defense: Poison",
       "statuses": [],
-      "transfer": false
+      "transfer": false,
+      "until": "end_of_turn"
     },
     {
       "changes": [
@@ -403,7 +412,8 @@
       "id": "BbvC3rh4RDmi06XI",
       "name": "Hunter's Defense: Psychic",
       "statuses": [],
-      "transfer": false
+      "transfer": false,
+      "until": "end_of_turn"
     },
     {
       "changes": [
@@ -422,7 +432,8 @@
       "id": "IFg9ae4ZyhMDPa3m",
       "name": "Hunter's Defense: Radiant",
       "statuses": [],
-      "transfer": false
+      "transfer": false,
+      "until": "end_of_turn"
     },
     {
       "changes": [
@@ -441,7 +452,8 @@
       "id": "30KWef6vBjF8RChr",
       "name": "Hunter's Defense: Slashing",
       "statuses": [],
-      "transfer": false
+      "transfer": false,
+      "until": "end_of_turn"
     },
     {
       "changes": [
@@ -460,7 +472,8 @@
       "id": "P7YUT6Y1NXGpo5Er",
       "name": "Hunter's Defense: Thunder",
       "statuses": [],
-      "transfer": false
+      "transfer": false,
+      "until": "end_of_turn"
     }
   ],
   "provenance": {

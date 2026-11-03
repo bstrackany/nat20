@@ -9,6 +9,16 @@
         "value": null
       },
       "applied_effects": [],
+      "area": {
+        "affects": "enemy",
+        "fires": "UkXLSgFbCBI9CHMf",
+        "once_per_turn": true,
+        "triggers": [
+          "enters",
+          "turn_end",
+          "moved_onto"
+        ]
+      },
       "consumption": {
         "scaling": {
           "allowed": false,
@@ -281,6 +291,16 @@
           "units": "ft",
           "width": ""
         }
+      },
+      "trigger": {
+        "against_bearer": false,
+        "also_at_cast": false,
+        "attack": "",
+        "ends_on_save": false,
+        "kind": "area",
+        "once": false,
+        "once_per_turn": false,
+        "subject": "target"
       },
       "uses": {
         "max": "",

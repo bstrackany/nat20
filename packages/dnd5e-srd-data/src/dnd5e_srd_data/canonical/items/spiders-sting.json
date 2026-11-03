@@ -150,6 +150,9 @@
       "duration": {
         "seconds": 3600
       },
+      "ends_on": [
+        "takes_damage"
+      ],
       "id": "zEQTKqd3uBj660cR",
       "name": "Unconscious",
       "statuses": [
