@@ -9,6 +9,13 @@
         "value": null
       },
       "applied_effects": [],
+      "area": {
+        "affects": "ally",
+        "effects": [
+          "WOJ5r71FCDRmElea"
+        ],
+        "inactive_while_incapacitated": true
+      },
       "consumption": {
         "scaling": {
           "allowed": false,
@@ -96,7 +103,7 @@
           "key": "system.bonuses.abilities.save",
           "mode": 2,
           "priority": null,
-          "value": "@abilities.cha.mod"
+          "value": "max(1, @abilities.cha.mod)"
         }
       ],
       "description": "",

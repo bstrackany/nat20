@@ -159,6 +159,9 @@ from dnd5e_engine.events import (
     ActorMoved,
     AdvantageMode,
     AdvantageSource,
+    AreaCreated,
+    AreaEnded,
+    AreaMoved,
     AreaTargeted,
     AttackFailed,
     AttackRolled,
@@ -214,6 +217,18 @@ from dnd5e_engine.outcome import (
     CombatOutcome,
     DeathRecord,
     LootDrop,
+)
+from dnd5e_engine.persistent_areas import (
+    Area,
+    area_is_live,
+    duration_rounds,
+    effects_inside,
+    emanation_cells,
+    map_overlay,
+    placed_cells,
+    silenced,
+    sorted_cells,
+    template_of,
 )
 from dnd5e_engine.rest import (
     FEATURE_USE_COUNTER_PREFIX,
@@ -1861,6 +1876,7 @@ def push_combatant(live: _LiveCombat, target_id: str, origin_cell: str, distance
             forced=True,
         ),
     )
+    _follow_bearer(live, target_id)
 
 
 def _apply_forced_movement_riders(
@@ -2068,6 +2084,7 @@ def _take_walk_step(live: _LiveCombat, mover_id: str, next_cell: str) -> bool:
             actor_id=mover_id, from_zone=from_cell, to_zone=next_cell, distance_ft=step_distance
         ),
     )
+    _follow_bearer(live, mover_id)
     return True
 
 
@@ -3373,6 +3390,11 @@ class _LiveCombat:
     # turn hooks and ``_fire_resolution_triggers``; dropped once no effect of
     # the use remains (``triggers.use_is_live``).
     held_uses: list[HeldUse] = field(default_factory=list)
+    # The areas on the map (``persistent_areas``), in the order they were made,
+    # and how many have been made (the ``area_id`` counter). Walked by
+    # ``_sync_areas``, ``_follow_bearer`` and ``_area_effects_on``.
+    areas: list[Area] = field(default_factory=list)
+    area_seq: int = 0
     # Event-log indexes ``_fire_moment_triggers`` has read (or that what it fired
     # emitted) since the last turn end, so a nested resolution's events and the
     # turn-end sweep never fire a ``natural_1`` / ``casts_spell`` /
@@ -4166,6 +4188,7 @@ def _drop_concentration(
         if c.entity_id == caster_id and c.concentration_effect_id is not None:
             live.initiative[idx] = c.model_copy(update={"concentration_effect_id": None})
             break
+    _sync_areas(live)
 
 
 # SRD 5.2 armor categories a creature can wear; a Shield is tracked
@@ -6264,6 +6287,7 @@ def _project_target_modifiers(
     check_entry["disadvantage"] = bool(check_proj.get("passive_check_dis"))
 
     active = live.active_effects.get(c.entity_id, [])
+    active = [*active, *_area_effects_on(live, c.entity_id)]
     if active:
         per_target_dmg = passive_damage_modifiers.get(c.entity_id, dict(damage_proj))
         dmg_dirty = _fold_active_effect_changes(
@@ -7191,6 +7215,8 @@ def _register_default_turn_hooks(live: _LiveCombat) -> None:
     hooks, after ``engine:timed-effect-expiry``, so a same-boundary repeat save
     (``engine:repeat-save``, registered first) still rolls against a live
     effect before the concentration cap can cascade its drop.
+    ``engine:areas-turn-end`` follows it: an area held by its duration loses a
+    round at its owner's turn end, and every area that no longer stands ends.
     ``engine:moment-triggers-turn-end`` precedes it: the ending turn's natural
     1s and falls no resolution read fire first, so the endings read what they
     emit.
@@ -7239,6 +7265,7 @@ def _register_default_turn_hooks(live: _LiveCombat) -> None:
     live.lifecycle.register(
         "turn_end", _hook_concentration_expiry, key="engine:concentration-expiry"
     )
+    live.lifecycle.register("turn_end", _hook_areas_turn_end, key="engine:areas-turn-end")
     live.lifecycle.register("turn_end", _hook_expire_vex_grants, key="engine:vex-expiry")
     live.lifecycle.register("turn_end", _hook_rage_extension, key="engine:rage-extension")
     live.lifecycle.register(
@@ -8100,6 +8127,8 @@ def _seed_always_on(live: _LiveCombat, pc: Combatant) -> None:
         for passive in source.passive_effects:
             if not passive.transfer or passive.disabled:
                 continue
+            if passive.id in _always_on_area_effect_ids(source):
+                continue
             changes = [
                 change
                 for ch in passive.changes
@@ -8136,6 +8165,7 @@ def _seed_always_on(live: _LiveCombat, pc: Combatant) -> None:
                     permanent=True,
                 )
             )
+        _seed_always_on_areas(live, pc, kind, source, roll_data)
 
 
 def _passive_change_to_active_change(
@@ -9787,6 +9817,7 @@ def _handle_move(live: _LiveCombat, current: Combatant, intent: PlayerIntent) ->
                 actor_id=actor_id, from_zone=run_start, to_zone=position, distance_ft=run_ft
             ),
         )
+    _follow_bearer(live, actor_id)
     # Turn stays live — no TurnEnded, no current_turn_index advance.
 
 
@@ -11112,6 +11143,7 @@ def _spell_out_of_range(
         if cast_spell_for_timing is not None
         else None
     )
+    point = point or _placed_area_point(intent, cast_spell_for_timing)
     if not (
         intent.intent_type == "cast_spell"
         and cast_spell_for_timing is not None
@@ -11910,6 +11942,411 @@ def _hold_use_for_intent(
             spellcasting_ability=None,
             pre_event_count=pre_event_count,
         )
+
+
+# ── Areas that stay on the map (``persistent_areas``) ───────────────────────
+
+
+def _cells_of(live: _LiveCombat, entity_id: str) -> frozenset[str]:
+    """The cells a creature occupies — one today, as every creature is one cell.
+    Every area rule asks through this, so a larger creature needs no other
+    change: it is in an area when any of its cells is."""
+    cell = live.actor_zone.get(entity_id)
+    return frozenset() if cell is None else frozenset({cell})
+
+
+def _area_bearer_present(live: _LiveCombat, area: Area) -> bool:
+    """An anchored area's bearer is alive and still in the combat; a placed
+    area has none to lose."""
+    bearer = area.anchor_id
+    return bearer is None or (
+        bearer not in live.dead_ids
+        and bearer in live.actor_zone
+        and _find_combatant(live, bearer) is not None
+    )
+
+
+def _area_active(live: _LiveCombat, area: Area) -> bool:
+    """SRD 5.2 Aura of Protection: "The aura is inactive while you have the
+    Incapacitated condition" — the bearer (the owner, for a placed area)
+    qualifies for the area's effects now."""
+    if not area.spec.inactive_while_incapacitated:
+        return True
+    bearer = _find_combatant(live, area.anchor_id or area.owner_id)
+    return bearer is not None and not conditions_block_actions(_condition_names(bearer))
+
+
+def _area_reaches(live: _LiveCombat, area: Area, creature_id: str) -> bool:
+    """``spec.affects`` seen from the area's owner, which is its own ally (SRD
+    5.2 Aura of Protection: "You and your allies in the aura")."""
+    if area.spec.affects == "ally":
+        return creature_id in _allied_ids(live, area.owner_id)
+    if area.spec.affects == "enemy":
+        return _is_enemy(live, area.owner_id, creature_id)
+    return True
+
+
+def _area_effects_on(live: _LiveCombat, entity_id: str) -> list[ActiveEffect]:
+    """The effects the areas give ``entity_id`` where it stands now — read
+    with its own effects wherever a roll reads them, never copied onto it."""
+    if not live.areas:
+        return []
+    return effects_inside(
+        live.areas,
+        _cells_of(live, entity_id),
+        entity_id,
+        reaches=lambda area, creature_id: _area_reaches(live, area, creature_id),
+        active=lambda area: _area_active(live, area),
+    )
+
+
+def _sync_areas(live: _LiveCombat) -> None:
+    """End every area that no longer stands (``AreaEnded``, in the order they
+    were made), then lay the map changes of those left over the topology. A
+    combat that never made an area is untouched."""
+    if not live.area_seq:
+        return
+    standing: list[Area] = []
+    ended: list[Area] = []
+    for area in live.areas:
+        live_now = area_is_live(
+            area,
+            concentration_chain=live.concentration_chain.get(area.owner_id, []),
+            active_effects=live.active_effects,
+            bearer_present=_area_bearer_present(live, area),
+        )
+        (standing if live_now else ended).append(area)
+    live.areas = standing
+    for area in ended:
+        _emit(live, AreaEnded(area_id=area.area_id))
+    overlay = map_overlay(live.areas)
+    live.topology.apply_area_overlay(
+        obscurement=overlay.obscurement,
+        lighting=overlay.lighting,
+        difficult_terrain=overlay.difficult_terrain,
+    )
+
+
+def _follow_bearer(live: _LiveCombat, entity_id: str) -> None:
+    """After ``entity_id`` moved (a walk, a push), every area anchored to it
+    takes its new cells (``AreaMoved``) and the map follows."""
+    moved = False
+    for area in live.areas:
+        if area.anchor_id != entity_id:
+            continue
+        cells = emanation_cells(live.topology, _cells_of(live, entity_id), area.template.size_ft)
+        if cells == area.cells:
+            continue
+        area.cells = cells
+        _emit(live, AreaMoved(area_id=area.area_id, cells=sorted_cells(cells)))
+        moved = True
+    if moved:
+        _sync_areas(live)
+
+
+def _hook_areas_turn_end(live: _LiveCombat, actor_id: str | None) -> None:
+    """``turn_end`` hook — an area held by its duration loses a round at its
+    owner's turn end (the cast turn's own end counts, as for concentration);
+    then every area that no longer stands ends."""
+    if actor_id is None or not live.areas:
+        return
+    for area in live.areas:
+        if area.owner_id == actor_id and area.rounds_remaining is not None:
+            area.rounds_remaining -= 1
+    _sync_areas(live)
+
+
+def _always_on_area_effect_ids(source: Any) -> frozenset[str]:
+    """The passive effects an always-on area of ``source`` delivers (Aura of
+    Protection's save bonus): they reach the creatures in the area through it,
+    the owner included, so they are not seeded onto the owner as well."""
+    return frozenset(
+        effect_id
+        for activity in source.activities
+        if (spec := getattr(activity, "area", None)) is not None and not activity.activation.type
+        for effect_id in spec.effects
+    )
+
+
+def _area_effect_documents(
+    source: Any, spec: Any, roll_data: UsesRollData, area_id: str
+) -> tuple[ActiveEffect, ...]:
+    """``spec.effects`` as runtime effects, their tokens resolved with the
+    owner's numbers now (the paladin's Charisma modifier, not the ally's). An id
+    the source lacks is left out, with a warning."""
+    by_id = {passive.id: passive for passive in source.passive_effects}
+    documents: list[ActiveEffect] = []
+    for effect_id in spec.effects:
+        passive = by_id.get(effect_id)
+        if passive is None:
+            _LOGGER.warning("area_effect_unknown slug=%s effect=%s", source.slug, effect_id)
+            continue
+        changes = [
+            change
+            for ch in passive.changes
+            if (change := _passive_change_to_active_change(ch, roll_data, source.slug)) is not None
+        ]
+        documents.append(
+            ActiveEffect(
+                id=f"effect:{source.slug}:{effect_id}",
+                name=passive.name or source.name,
+                origin=f"area:{area_id}",
+                target_id="",
+                changes=changes,
+                flags={"area": area_id},
+            )
+        )
+    return tuple(documents)
+
+
+def _make_area(
+    live: _LiveCombat,
+    owner: Combatant,
+    activity: Any,
+    template: AreaTemplate,
+    *,
+    source_kind: TriggerSource,
+    source: Any,
+    slot_level: int | None,
+    roll_data: UsesRollData,
+    origin: str | None,
+    direction: tuple[int, int] | None,
+    concentration: bool = False,
+    held_by: frozenset[tuple[str, str, str]] = frozenset(),
+    rounds: int | None = None,
+    permanent: bool = False,
+) -> None:
+    """Put ``activity``'s area on the map: an Emanation around ``owner``, any
+    other shape at ``origin`` (aimed along ``direction``); emit
+    ``AreaCreated`` and lay its map changes."""
+    live.area_seq += 1
+    area_id = f"area:{source.slug}:{owner.entity_id}:{live.area_seq}"
+    if template.shape == "emanation":
+        anchor_id: str | None = owner.entity_id
+        origin, direction = None, None
+        cells = emanation_cells(live.topology, _cells_of(live, owner.entity_id), template.size_ft)
+    elif origin is None or (template.directional and direction is None):
+        _LOGGER.warning("area_not_placed slug=%s reason=no_origin_or_aim", source.slug)
+        return
+    else:
+        anchor_id = None
+        cells = placed_cells(live.topology, template, origin, direction)
+    area = Area(
+        area_id=area_id,
+        owner_id=owner.entity_id,
+        source_kind=source_kind,
+        source_slug=source.slug,
+        source_name=source.name,
+        spec=activity.area,
+        template=template,
+        kind="placed" if anchor_id is None else "anchored",
+        cells=cells,
+        origin=origin,
+        direction=direction,
+        anchor_id=anchor_id,
+        slot_level=slot_level,
+        effects=_area_effect_documents(source, activity.area, roll_data, area_id),
+        concentration=concentration,
+        held_by=held_by,
+        rounds_remaining=rounds,
+        permanent=permanent,
+        seq=live.area_seq,
+    )
+    live.areas.append(area)
+    _emit(
+        live,
+        AreaCreated(
+            area_id=area_id,
+            owner_id=owner.entity_id,
+            source_id=source.slug,
+            kind=area.kind,
+            shape=template.shape,
+            size_ft=template.size_ft,
+            origin=origin,
+            anchor_id=anchor_id,
+            cells=sorted_cells(cells),
+        ),
+    )
+    _sync_areas(live)
+
+
+def _seed_always_on_areas(
+    live: _LiveCombat, pc: Combatant, kind: TriggerSource, source: Any, roll_data: UsesRollData
+) -> None:
+    """A feature or feat whose area activity needs no activation (Aura of
+    Protection) has its area for the whole combat, from the start."""
+    for activity in source.activities:
+        if getattr(activity, "area", None) is None or activity.activation.type:
+            continue
+        template = template_of(activity, roll_data, None)
+        if template is None:
+            _LOGGER.warning("area_template_unsupported slug=%s", source.slug)
+            continue
+        _make_area(
+            live,
+            pc,
+            activity,
+            template,
+            source_kind=kind,
+            source=source,
+            slot_level=None,
+            roll_data=roll_data,
+            origin=live.actor_zone.get(pc.entity_id),
+            direction=None,
+            permanent=True,
+        )
+
+
+def _intent_area_source(
+    current: Combatant, intent: PlayerIntent, resolved: _ResolvedActivities
+) -> tuple[TriggerSource, Any, int | None] | None:
+    """What an intent used, as ``_hold_use_for_intent`` reads it: the cast
+    spell (and its level), the used feature or feat, or the used item."""
+    loader = get_lib_loader()
+    if resolved.cast_spell is not None:
+        spell = resolved.cast_spell
+        level = intent.slot_level if intent.slot_level is not None else spell.level
+        return "spell", spell, level
+    if intent.intent_type == "use_feature" and intent.feature_id:
+        if intent.feature_id in _granted_feature_slugs(current):
+            return "feature", loader.get_feature(intent.feature_id), None
+        return "feat", loader.get_feat(intent.feature_id), None
+    if intent.intent_type == "use_item" and intent.item_id:
+        return "item", loader.get_item(intent.item_id), None
+    return None
+
+
+def _make_areas_for_intent(
+    live: _LiveCombat,
+    current: Combatant,
+    intent: PlayerIntent,
+    resolved: _ResolvedActivities,
+    pre_event_count: int,
+) -> None:
+    """The areas a resolved intent leaves on the map: one per resolved activity
+    whose data carries ``area``. Called once the use is folded, so a
+    concentration spell's area is held by the concentration it just began (the
+    anchor included) and ends with it; a spell without concentration lasts while
+    an effect it applied remains, else its duration in rounds; a feature or
+    item, the activity's own duration. The point of origin and aim are the
+    cast's own (``_area_origin``, ``_aoe_direction``), so a save the cast
+    resolved and the area it leaves cover the same cells."""
+    with_area = [a for a in resolved.activities if getattr(a, "area", None) is not None]
+    used = _intent_area_source(current, intent, resolved) if with_area else None
+    if used is None or used[1] is None:
+        return
+    source_kind, source, slot_level = used
+    roll_data = _uses_roll_data(current, _scale_values_of(current))
+    applied = _effects_applied_since(live, pre_event_count)
+    concentration = isinstance(source, Spell) and source.concentration
+    held_by = frozenset(applied)
+    if concentration:
+        chain = live.concentration_chain.get(current.entity_id, [])
+        if not any(i in chain for i in applied):
+            return  # the cast's concentration already ended (a failed save at cast)
+        # One concentration at a time: an earlier area the caster held by
+        # concentration (a same-target recast keeps its chain entry) ends now.
+        for earlier in live.areas:
+            if earlier.owner_id == current.entity_id and earlier.concentration:
+                earlier.held_by = frozenset()
+        held_by = frozenset({_hold_concentration_on_area(live, current, source)})
+    for activity in with_area:
+        template = template_of(activity, roll_data, slot_level)
+        if template is None:
+            _LOGGER.warning("area_template_unsupported slug=%s", source.slug)
+            continue
+        rounds = (
+            _spell_duration_rounds(source)
+            if isinstance(source, Spell)
+            else duration_rounds(activity.duration.value, activity.duration.units)
+        )
+        if not held_by and rounds is None:
+            _LOGGER.warning("area_not_placed slug=%s reason=no_effect_and_no_duration", source.slug)
+            continue
+        _make_area(
+            live,
+            current,
+            activity,
+            template,
+            source_kind=source_kind,
+            source=source,
+            slot_level=slot_level,
+            roll_data=roll_data,
+            origin=_area_origin(live, current.entity_id, intent, template),
+            direction=(
+                _aoe_direction(live, current.entity_id, intent) if template.directional else None
+            ),
+            concentration=concentration,
+            held_by=held_by,
+            rounds=None if held_by else rounds,
+        )
+
+
+def _hold_concentration_on_area(
+    live: _LiveCombat, caster: Combatant, spell: Spell
+) -> tuple[str, str, str]:
+    """The caster's concentration anchor for ``spell`` (``_anchor_identity``),
+    applied now if the cast's own concentration effects hold it instead. The
+    area is the spell (SRD 5.2 Entangle: "They disappear when the spell ends"),
+    so it lasts while the caster concentrates, not while the creature it
+    Restrained or Poisoned stays so; the anchor joins the chain beside those
+    effects and goes with any concentration drop."""
+    identity = _anchor_identity(spell.slug, caster.entity_id)
+    chain = live.concentration_chain.setdefault(caster.entity_id, [])
+    if identity not in chain:
+        target_id, effect_id, origin = identity
+        _emit(
+            live,
+            EffectApplied(
+                effect=ActiveEffect(
+                    id=effect_id,
+                    name=spell.name,
+                    origin=origin,
+                    target_id=target_id,
+                    flags={"concentration": True, _ANCHOR_FLAG: True},
+                )
+            ),
+        )
+        chain.append(identity)
+    return identity
+
+
+def _placed_area_point(intent: PlayerIntent, spell: Spell | None) -> str | None:
+    """The space a cast names as the point of origin of an area it leaves
+    behind (SRD 5.2 Fog Cloud: "centered on a point within range"), so the
+    range gate measures it; ``None`` otherwise."""
+    if spell is None or intent.intent_type != "cast_spell" or intent.target_zone_id is None:
+        return None
+    centred = any(
+        getattr(activity, "area", None) is not None
+        and activity.target.template.type in _CENTRED_TEMPLATE_TYPES
+        for activity in spell.activities
+    )
+    return intent.target_zone_id if centred else None
+
+
+#: Foundry template types centred on a point (``areas``' Sphere and Cylinder),
+#: whose point a cast names with ``target_zone_id``.
+_CENTRED_TEMPLATE_TYPES: Final = frozenset({"sphere", "circle", "cylinder"})
+
+
+def _silenced_cast_failure(
+    live: _LiveCombat, actor_id: str, intent: PlayerIntent, spell: Spell | None
+) -> CombatEvent | None:
+    """``CastFailed(reason="components_missing")`` for a spell with a Verbal
+    component cast from inside a Silence (SRD 5.2: "Casting a spell that
+    includes a Verbal component is impossible there"); ``None`` otherwise. One
+    of the ``pre_resolution_gates``."""
+    if (
+        intent.intent_type != "cast_spell"
+        or spell is None
+        or SpellComponent.VOCAL not in spell.components
+        or not silenced(live.areas, _cells_of(live, actor_id))
+    ):
+        return None
+    return CastFailed(
+        actor_id=actor_id, spell_id=intent.spell_id or "", reason="components_missing"
+    )
 
 
 def _end_use_effects_on(
@@ -13866,7 +14303,11 @@ def _effects_in_play(
     for c in (actor, *targets):
         if c.entity_id not in seen:
             seen.append(c.entity_id)
-    return tuple(eff for cid in seen for eff in live.active_effects.get(cid, []))
+    return tuple(
+        eff
+        for cid in seen
+        for eff in (*live.active_effects.get(cid, []), *_area_effects_on(live, cid))
+    )
 
 
 def _pc_attack_context_kwargs(
@@ -14107,6 +14548,7 @@ async def submit_player_intent(
     # is rejected.
     pre_resolution_gates: tuple[Callable[[], CombatEvent | None], ...] = (
         lambda: _spell_out_of_range_failure(live, actor_id, intent, cast_spell_for_timing),
+        lambda: _silenced_cast_failure(live, actor_id, intent, cast_spell_for_timing),
         lambda: _attack_out_of_range_failure(live, actor_id, intent),
         lambda: _loading_weapon_already_fired_failure(current, actor_id, intent, attack_weapon),
         lambda: _charmed_target_failure(live, actor_id, current, intent),
@@ -14517,6 +14959,7 @@ async def submit_player_intent(
     # The activities the use holds for later (``Activity.trigger``), and the
     # ones this resolution's hits and damage fire now.
     _hold_use_for_intent(live, current, intent, resolved, pre_event_count)
+    _make_areas_for_intent(live, current, intent, resolved, pre_event_count)
     _fire_resolution_triggers(live, current, pre_event_count)
 
     # SRD §Hold Person / §Hold Monster — *"At the end of each of its turns,

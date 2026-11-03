@@ -37,6 +37,7 @@ nav:
       - Reactions: concepts/reactions.md
       - Monsters: concepts/monsters.md
       - Grid: concepts/grid.md
+      - Areas on the map: concepts/areas.md
   - Capability matrix: capabilities.md
   - API reference: api.md
   - Hosting:

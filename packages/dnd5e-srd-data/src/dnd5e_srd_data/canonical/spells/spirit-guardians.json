@@ -130,6 +130,7 @@
         "value": null
       },
       "applied_effects": [],
+      "area": {},
       "consumption": {
         "scaling": {
           "allowed": false,

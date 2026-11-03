@@ -398,6 +398,86 @@ class RollModifier(BaseModel, frozen=True):
         return self
 
 
+#: SRD 5.2 Fog Cloud: "The Sphere is Heavily Obscured"; Web: "the area within
+#: them is Lightly Obscured".
+AreaObscurement = Literal["light", "heavy"]
+
+#: SRD 5.2 Darkness: "magical Darkness spreads from a point within range";
+#: Moonbeam: "Dim Light fills the Cylinder"; Daylight: "The sunlight's area is
+#: Bright Light".
+AreaLighting = Literal["bright", "dim", "dark"]
+
+#: Whom an area's effects reach, seen from the creature that made it (itself an
+#: ally): SRD 5.2 Aura of Protection "You and your allies in the aura"; Silence
+#: "Any creature or object entirely inside the Sphere"; enemies only in homebrew
+#: (Elder Champion, Cloying Mists).
+AreaAffects = Literal["all", "ally", "enemy"]
+
+
+class AreaMap(BaseModel, frozen=True, extra="forbid"):
+    """What an area changes about the cells it covers, while it lasts.
+
+    ``obscurement`` and ``lighting`` re-grade the cells (Darkness is both
+    ``dark`` and ``heavy``: SRD 5.2 "Darkvision can't see through it");
+    ``difficult_terrain`` makes them Difficult Terrain (Grease, Web, Sleet Storm,
+    Entangle, Spike Growth); ``blocks_verbal`` refuses a spell with a Verbal
+    component cast from inside (Silence: "Casting a spell that includes a Verbal
+    component is impossible there"). Unset fields are left out of a dump; a
+    field the engine doesn't read is refused.
+    """
+
+    obscurement: AreaObscurement | None = None
+    lighting: AreaLighting | None = None
+    difficult_terrain: bool = False
+    blocks_verbal: bool = False
+
+    @model_serializer(mode="wrap")
+    def _without_unset(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        data: dict[str, Any] = handler(self)
+        return {key: value for key, value in data.items() if value}
+
+
+class PersistentArea(BaseModel, frozen=True, extra="forbid"):
+    """An activity whose area stays on the map after the use that makes it.
+
+    The shape and size are the activity's own ``target.template``: an Emanation
+    (``radius``) moves with the creature that made it (Spirit Guardians, Aura of
+    Protection), any other shape stays where it was placed (Fog Cloud, Web). It
+    lasts as long as its use: the concentration that holds it, the spell's
+    duration, or the whole combat for a feature that is always on.
+
+    ``effects`` are ids of the entry's own ``passive_effects`` that apply to a
+    creature only while any of its space is in the area (Aura of Protection's
+    save bonus), to the creatures ``affects`` names. ``inactive_while_incapacitated``
+    switches the effects off while the creature the area surrounds has the
+    Incapacitated condition (Aura of Protection: "The aura is inactive while you
+    have the Incapacitated condition"). Defaults are left out of a dump, so an
+    area that only marks the map dumps as ``{"map": {...}}``.
+    """
+
+    map: AreaMap = Field(default_factory=AreaMap)
+    effects: list[str] = Field(default_factory=list)
+    affects: AreaAffects = "all"
+    inactive_while_incapacitated: bool = False
+
+    @model_serializer(mode="wrap")
+    def _without_defaults(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        data: dict[str, Any] = handler(self)
+        if data.get("affects") == "all":
+            data.pop("affects", None)
+        for key in ("map", "effects", "inactive_while_incapacitated"):
+            if not data.get(key):
+                data.pop(key, None)
+        return data
+
+
+#: The ``target.template.type`` values an area can take its shape from: every
+#: Foundry template with a point of origin (a ``wall`` has none).
+_AREA_TEMPLATE_TYPES = frozenset(
+    {"sphere", "circle", "cylinder", "radius", "cube", "square", "cone", "line"}
+)
+
+
 class ReactionCondition(BaseModel, frozen=True):
     """One typed trigger. A reaction with several triggers (Shield) carries
     several entries — OR semantics."""
@@ -873,6 +953,10 @@ class _ActivityBase(BaseModel):
     #: ``None`` (Foundry has no field for it) everywhere else; left out of a
     #: dump when ``None``.
     roll_modifier: RollModifier | None = None
+    #: An area the activity leaves on the map (``PersistentArea``). ``None``
+    #: (Foundry has no field for it) everywhere else; left out of a dump when
+    #: ``None``.
+    area: PersistentArea | None = None
 
     model_config = {"populate_by_name": True}
 
@@ -885,6 +969,8 @@ class _ActivityBase(BaseModel):
             data.pop("damage_reduction", None)
         if data.get("roll_modifier") is None:
             data.pop("roll_modifier", None)
+        if data.get("area") is None:
+            data.pop("area", None)
         return data
 
     @model_validator(mode="after")
@@ -895,6 +981,17 @@ class _ActivityBase(BaseModel):
         rolls = reduction is not None and reduction.mode is DamageReductionMode.ROLL
         if rolls and getattr(self, "healing", None) is None:
             raise ValueError("damage_reduction mode 'roll' needs a heal activity's healing")
+        return self
+
+    @model_validator(mode="after")
+    def _area_has_a_shape(self) -> _ActivityBase:
+        """An area takes its shape from the activity's template, so the
+        template must be one with a point of origin (not a ``wall``)."""
+        if self.area is not None and self.target.template.type not in _AREA_TEMPLATE_TYPES:
+            raise ValueError(
+                f"area needs a template of type {sorted(_AREA_TEMPLATE_TYPES)}, "
+                f"not {self.target.template.type!r}"
+            )
         return self
 
     @model_validator(mode="after")

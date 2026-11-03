@@ -9,6 +9,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`Activity.area`** (`PersistentArea`: `map` — `AreaMap` with
+  `obscurement` light / heavy, `lighting` bright / dim / dark,
+  `difficult_terrain`, `blocks_verbal` — plus `effects` (ids of the entry's own
+  passive effects that apply while a creature is in the area), `affects` all /
+  ally / enemy, `inactive_while_incapacitated`): an activity whose area stays
+  on the map after its use. Its shape and size are the activity's
+  `target.template`, which must have a point of origin (a `wall` is refused);
+  unknown fields are refused. Left out of a dump when unset, and its defaults
+  within it. The translator sets it from `_AREAS` on eleven SRD 5.2 spells and
+  one feature: Fog Cloud, Darkness, Grease, Web, Sleet Storm, Entangle, Spike
+  Growth, Stinking Cloud, Moonbeam, Silence (Thunder immunity, no Verbal
+  spells), Spirit Guardians (the area only) and Aura of Protection (its save
+  bonus to allies, inactive while Incapacitated). `_FEATURE_EFFECT_VALUE_CORRECTIONS`
+  gives Aura of Protection's bonus its "minimum bonus of +1"
+  (`max(1, @abilities.cha.mod)`). Canonical: those twelve files changed. New
+  exports `AreaAffects`, `AreaLighting`, `AreaMap`, `AreaObscurement`,
+  `PersistentArea`.
+
 - **`Activity.roll_modifier`** (`RollModifier`: `mode` `roll` / `reroll` /
   `set` / `succeed`, `applies_to` attack / save / check, `whose` self / ally /
   enemy, `within_ft`, `seen`, `value`) — an activity that changes a D20 Test

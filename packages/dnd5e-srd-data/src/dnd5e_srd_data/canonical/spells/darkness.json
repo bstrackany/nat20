@@ -9,6 +9,12 @@
         "value": null
       },
       "applied_effects": [],
+      "area": {
+        "map": {
+          "lighting": "dark",
+          "obscurement": "heavy"
+        }
+      },
       "consumption": {
         "scaling": {
           "allowed": false,

@@ -31,10 +31,9 @@ counts are pinned by `packages/dnd5e-engine/tests/test_capability_matrix.py`.
   orchestrator hands the resolution a conjuration carrier for an allowlisted
   source: Spiritual Weapon, Magic Weapon, Wild Shape and Polymorph resolve
   (C21a), and Summon Dragon seats its Draconic Spirit (C21b; the other
-  summons are under "Roster summons"). The measured consequence: **104 of 339
-  SRD spells (31%) load correctly and emit no events**, 29 of them
-  concentration spells — *Darkness, Fog Cloud,
-  Wall of Force, Silent Image, Globe of Invulnerability, Expeditious
+  summons are under "Roster summons"). The measured consequence: **102 of 339
+  SRD spells (30%) load correctly and emit no events**, 27 of them
+  concentration spells — *Wall of Force, Silent Image, Globe of Invulnerability, Expeditious
   Retreat* — which at least concentrate now (Blur applies its effect since
   2026-10-30). Several are combat staples a host
   will reach for immediately.
@@ -412,7 +411,8 @@ counts are pinned by `packages/dnd5e-engine/tests/test_capability_matrix.py`.
   none of the four resolves an area, so `PlayerIntent.excluded_target_ids`
   sent with any of them is refused with `target_invalid`. Spirit Guardians'
   "designate creatures to be unaffected" stays unexpressed until a persistent
-  emanation is modelled (see "No ongoing-damage producer").
+  emanation's triggers are modelled (amended 2026-11-03: the Emanation itself
+  now stands on the map, `persistent_areas`; its saves are the next piece).
   (`packages/dnd5e-engine/src/dnd5e_engine/areas.py::is_choice`,
   `packages/dnd5e-engine/src/dnd5e_engine/orchestrator.py::_area_target_failure`)
 
@@ -639,7 +639,9 @@ counts are pinned by `packages/dnd5e-engine/tests/test_capability_matrix.py`.
   Truesight see into fog this way (amended 2026-10-06, C27).
   (`packages/dnd5e-engine/src/dnd5e_engine/spatial.py::GridTopology.can_see`)
 - **Vision is scene-lit only** (2026-08-27, amended 2026-09-02, 2026-09-03).
-  No light sources (torches, *Light*, *Darkness*), no viewer-side
+  No light sources (torches, *Light*; a spell area's light and obscurement
+  are laid over the scene since 2026-11-03, *Darkness* included, but *Darkness*
+  doesn't dispel a light spell it overlaps), no viewer-side
   obscurement, no Blinded emission from darkness; `can_see` reads
   `GridScene.lighting` / `obscurement_cells` plus the viewer's projected
   senses. Sunlight Sensitivity's attack-roll half closed C18 (the new
@@ -1282,8 +1284,10 @@ zone + apply logic:
   (`Activity.trigger`: Acid Arrow's lingering acid, Searing Smite's burn,
   Weird's repeat save). Damage that depends on where a creature stands —
   Spirit Guardians' emanation, Moonbeam, Cloud of Daggers, Stinking Cloud's
-  "Start of Turn Save" — still has none: it needs a persistent area the turn
-  hook can test a creature's cell against. (Regeneration and recharge rolls
+  "Start of Turn Save" — still has none. The persistent area it needs now exists (amended
+  2026-11-03: `Activity.area`, `live.areas`, placed and anchored,
+  `docs/concepts/areas.md`); what is missing is the trigger that tests a
+  creature entering or standing in one. (Regeneration and recharge rolls
   closed C18 — they run at the head of a driven monster turn,
   `_run_monster_turn_start`, rather than as a registered `turn_start` hook;
   see `docs/migration/v0.5-to-v0.6.md`.)

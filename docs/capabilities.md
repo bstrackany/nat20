@@ -64,25 +64,25 @@ without failing CI.
 | Multi-tile (Large+) creature footprints | ❌ Not modelled | Every creature occupies one cell, a Large summoned Draconic Spirit included (C21) |
 | Threat-aware or cost-aware pathfinding | ❌ Not modelled | `shortest_path` (every move's route) is fewest-squares BFS; the route's terrain cost is charged but not minimised. Only the flee planner prices routes by cost (`GridTopology.reachable_cells`, C24) |
 | Forced movement (push) | ✅ Resolved | `push_combatant` → `CombatantMoved(forced=True)`; wired for Thunderwave, Shove's push option (C14), and the Push weapon mastery (C15, always the full 10 ft — the "Large or smaller" size gate is unmodelled, see BACKLOG.md) |
-| Vision and light (darkness, darkvision, blindsight, truesight, obscurement) | ⚠️ Partial | `GridScene.lighting` / `obscurement_cells` + `GridTopology.can_see` feed the `unseen` attack advantage/disadvantage both ways. The composite `_combatant_can_see` predicate (a Blinded viewer sees only through Blindsight; an Invisible target is seen only through Blindsight or Truesight in range; else the scene model) gates every other SRD "can see" conjunct: the "if you can see the attacker" half of a dodging combatant's attack-disadvantage, Ranged Attacks in Close Combat, the Opportunity Attack trigger (both directions), Hide's "out of any enemy's line of sight" check, and Frightened's line-of-sight gate on its attack rolls and ability checks (its "can't willingly move closer" rule has no sight clause, C27). A dark cell now also satisfies Hide's Heavily Obscured gate. Since C27 a templated monster sees with its stat block's senses — Darkvision, Blindsight, Truesight; `EncounterMemberSpec.senses` overrides them — so every consumer above applies to it, and its Truesight sees into a Heavily Obscured cell, magical Darkness or not (BACKLOG.md). Still no light sources (torches, *Light*, *Darkness*) and no Blinded emission from darkness |
+| Vision and light (darkness, darkvision, blindsight, truesight, obscurement) | ⚠️ Partial | `GridScene.lighting` / `obscurement_cells` + `GridTopology.can_see` feed the `unseen` attack advantage/disadvantage both ways. The composite `_combatant_can_see` predicate (a Blinded viewer sees only through Blindsight; an Invisible target is seen only through Blindsight or Truesight in range; else the scene model) gates every other SRD "can see" conjunct: the "if you can see the attacker" half of a dodging combatant's attack-disadvantage, Ranged Attacks in Close Combat, the Opportunity Attack trigger (both directions), Hide's "out of any enemy's line of sight" check, and Frightened's line-of-sight gate on its attack rolls and ability checks (its "can't willingly move closer" rule has no sight clause, C27). A dark cell now also satisfies Hide's Heavily Obscured gate. Since C27 a templated monster sees with its stat block's senses — Darkvision, Blindsight, Truesight; `EncounterMemberSpec.senses` overrides them — so every consumer above applies to it, and its Truesight sees into a Heavily Obscured cell, magical Darkness or not (BACKLOG.md). A spell's area lays its light and obscurement over the scene while it stands (*Darkness*: dark and Heavily Obscured, so Darkvision can't see into it; *Fog Cloud*, *Moonbeam*; [Areas on the map](concepts/areas.md)). Still no light sources (torches, *Light*), no dispelling of a light spell by *Darkness*, and no Blinded emission from darkness |
 
 ## Spells
 
 The engine resolves a spell by walking its typed activities. Spells whose only
 activities are `summon`, `transform`, `enchant`, or a rider-less `utility` load
 correctly and **emit no events** — unless the conjuration allowlist resolves
-them (C21: Spiritual Weapon, Summon Dragon and Magic Weapon).
+them (C21: Spiritual Weapon, Summon Dragon and Magic Weapon) or the activity
+leaves an area on the map (`Activity.area`: Fog Cloud, Darkness).
 
 | | Count |
 |---|---|
 | Spells in the corpus | **339** |
-| Resolve to at least one mechanical activity | **235** (69%) |
-| Load but resolve to nothing | **104** (31%) |
-| …of which are concentration spells | **29** |
+| Resolve to at least one mechanical activity | **237** (70%) |
+| Load but resolve to nothing | **102** (30%) |
+| …of which are concentration spells | **27** |
 
 Inert concentration spells include staples a combat host will reach for:
-*Darkness, Fog Cloud, Wall of Force, Silent Image, Globe of Invulnerability,
-Expeditious Retreat.* Each still concentrates when cast
+*Wall of Force, Silent Image, Globe of Invulnerability, Expeditious Retreat.* Each still concentrates when cast
 (C21), so it ends the caster's earlier concentration and later damage draws
 the Constitution save. Others in the inert set (*Alarm, Augury, Clairvoyance,
 Create Food and Water*) are out of scope for a combat engine by nature.
@@ -93,6 +93,7 @@ Create Food and Water*) are out of scope for a combat engine by nature.
 | Spell attack rolls & save DCs (incl. flat overrides) | ✅ Resolved |
 | Concentration | ✅ full lifecycle (C13, C21: every concentration spell concentrates, including one that applies no effect of its own) |
 | Activities that fire later — a turn boundary, a hit, a cast, a fall | ⚠️ Partial | `Activity.trigger` names the moment; the engine holds the cast while an effect of it remains (or for its duration) and fires the activity then, emitting `ActivityTriggered` first. Twelve SRD spells carry one: Acid Arrow's and Vitriolic Sphere's lingering acid, Searing Smite's and Ensnaring Strike's start-of-turn damage, Weird's end-of-turn save (ending on a success), Hex's and Hunter's Mark's extra damage on a hit against the marked creature. The repeatable actions of Sunbeam, Call Lightning, Heat Metal, Vampiric Touch and Telekinesis are marked `later_use`: the cast does not resolve them and the engine does not re-fire them. A consumer's own data may also answer a hit on the bearer or damage it takes, a natural 1 on a D20 Test, a cast (one spell, or one with a slot), the subject reducing an enemy to 0 HP, and an enemy dropping to 0 HP (within a distance) — read after each resolution and over each ending turn; an enemy dropped outside a resolution (an area at a turn's start) counts as falling but not as reduced by anyone. Not yet: a missed attack or a save's outcome (the cases are Reactions), a natural 20, a later use, a creature entering or standing in an area at its turn, a numbered later round (BACKLOG.md) |
+| Areas that stay on the map (placed and Emanations) | ⚠️ Partial | `Activity.area` keeps an area after its use, until its concentration, its duration or its bearer ends it (`AreaCreated` / `AreaMoved` / `AreaEnded`, `LiveCombatView.areas`). Placed: Fog Cloud, Darkness, Stinking Cloud and Sleet Storm obscure; Darkness and Moonbeam light; Grease, Web, Sleet Storm, Entangle and Spike Growth are Difficult Terrain; Silence refuses a Verbal spell cast inside it and gives Thunder immunity. Anchored, following its bearer's every move: Spirit Guardians, and Aura of Protection, whose save bonus (minimum +1) reaches the paladin and its allies inside while the paladin isn't Incapacitated, the better of two auras applying. An area's effects are read live, never copied. Not yet: what happens on entering or standing in an area (the saves and damage of Spirit Guardians, Moonbeam, Spike Growth, Web, Stinking Cloud), moving an area, walls (Wall of Force), an area's conditions (Silence's Deafened) ([Areas on the map](concepts/areas.md)) |
 | Counterspell, Shield, Hellish Rebuke, Magic Missile interactions | ⚠️ Partial | Implemented, but as named special cases rather than data-driven rules; slot-gated and range-gated at drain time |
 | Ritual casting | ⚠️ Partial | Out-of-combat via `resolve_ritual_cast`; in-combat rejected |
 | Material components / component pouches | ⚠️ Partial | Metadata on `SpellCast`, not enforced |

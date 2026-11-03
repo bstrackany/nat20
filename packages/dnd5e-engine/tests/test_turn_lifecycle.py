@@ -308,6 +308,9 @@ def test_hooks_registered_by_the_engine_are_present_and_ordered():
     * ``engine:moment-triggers-turn-end`` comes just before it — the ending
       turn's natural 1s and falls no resolution read (the repeat save among
       them) fire first, so the effect endings also read what they emit;
+    * ``engine:areas-turn-end`` follows the concentration expiry: an area
+      held by its duration loses a round at its owner's turn end, and an area
+      whose concentration that expiry just ended is already gone;
     * ``engine:rage-extension`` (C20, SRD 5.2 Rage) is appended LAST — it reads
       only the ending turn's own events and the Bonus-Action mark, and follows
       the round tick so the corpus Rage's ``rounds`` stays the outer cap.
@@ -334,6 +337,7 @@ def test_hooks_registered_by_the_engine_are_present_and_ordered():
             "engine:moment-triggers-turn-end",
             "engine:effect-endings-turn-end",
             "engine:concentration-expiry",
+            "engine:areas-turn-end",
             "engine:vex-expiry",
             "engine:rage-extension",
         ],

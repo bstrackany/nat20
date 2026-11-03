@@ -21,6 +21,7 @@ from dnd5e_srd_data import (
     Activity,
     AdvancementEntry,
     AdvancementType,
+    AreaMap,
     Armor,
     ArmorCategory,
     AttackActivity,
@@ -62,6 +63,7 @@ from dnd5e_srd_data import (
     Movement,
     PassiveEffect,
     PassiveEffectChange,
+    PersistentArea,
     PrimaryAbility,
     Provenance,
     Range,
@@ -2546,6 +2548,96 @@ def _apply_roll_modifiers(slug: str, activities: list[Activity]) -> list[Activit
     return out
 
 
+#: ``(spell or feature slug, activity _id)`` → the area the activity leaves on the
+#: map (``Activity.area``). Foundry draws these as a template or region and
+#: leaves what they do to a module, so the SRD 5.2 sentence is the source. What
+#: happens to a creature entering or standing in the area (saves, damage,
+#: Restrained) is not here.
+_AREAS: dict[tuple[str, str], PersistentArea] = {
+    # "The Sphere is Heavily Obscured."
+    ("fog-cloud", "dnd5eactivity000"): PersistentArea(map=AreaMap(obscurement="heavy")),
+    # "magical Darkness spreads from a point within range and fills a
+    # 15-foot-radius Sphere. Darkvision can't see through it"
+    ("darkness", "dnd5eactivity000"): PersistentArea(
+        map=AreaMap(lighting="dark", obscurement="heavy")
+    ),
+    # "turns it into Difficult Terrain for the duration"
+    ("grease", "dnd5eactivity000"): PersistentArea(map=AreaMap(difficult_terrain=True)),
+    # "The webs are Difficult Terrain, and the area within them is Lightly Obscured."
+    ("web", "dnd5eactivity000"): PersistentArea(
+        map=AreaMap(difficult_terrain=True, obscurement="light")
+    ),
+    # "The area is Heavily Obscured ... Ground in the Cylinder is Difficult Terrain."
+    ("sleet-storm", "dnd5eactivity000"): PersistentArea(
+        map=AreaMap(difficult_terrain=True, obscurement="heavy")
+    ),
+    # "these plants turn the ground in the area into Difficult Terrain"
+    ("entangle", "dnd5eactivity000"): PersistentArea(map=AreaMap(difficult_terrain=True)),
+    # "The area becomes Difficult Terrain for the duration."
+    ("spike-growth", "dnd5eactivity000"): PersistentArea(map=AreaMap(difficult_terrain=True)),
+    # "The cloud is Heavily Obscured."
+    ("stinking-cloud", "b4WUwQ8fDL83FwYC"): PersistentArea(map=AreaMap(obscurement="heavy")),
+    # "Until the spell ends, Dim Light fills the Cylinder"
+    ("moonbeam", "dnd5eactivity000"): PersistentArea(map=AreaMap(lighting="dim")),
+    # "Any creature or object entirely inside the Sphere has Immunity to Thunder
+    # damage ... Casting a spell that includes a Verbal component is impossible
+    # there."
+    ("silence", "dnd5eactivity000"): PersistentArea(
+        map=AreaMap(blocks_verbal=True), effects=["kjbKMAk1y5VUyEoT"]
+    ),
+    # "Protective spirits flit around you in a 15-foot Emanation for the duration."
+    ("spirit-guardians", "Rw9xP3RWH9K4eDya"): PersistentArea(),
+    # "You radiate a protective, unseeable aura in a 10-foot Emanation that
+    # originates from you. The aura is inactive while you have the Incapacitated
+    # condition. You and your allies in the aura gain a bonus to saving throws"
+    ("aura-of-protection", "nwLsJcC3bXA6i7QZ"): PersistentArea(
+        effects=["WOJ5r71FCDRmElea"], affects="ally", inactive_while_incapacitated=True
+    ),
+}
+
+
+def _apply_areas(slug: str, activities: list[Activity]) -> list[Activity]:
+    """Set each activity's ``area`` from ``_AREAS``. Copy-on-write like
+    ``_apply_roll_modifiers``."""
+    out: list[Activity] = []
+    for act in activities:
+        area = _AREAS.get((slug, act.id))
+        if area is not None:
+            act = act.model_copy(update={"area": area})
+        out.append(act)
+    return out
+
+
+#: ``(feature slug, effect _id, change key)`` → the change's value, where the
+#: pinned Foundry value misses the SRD 5.2 sentence. Aura of Protection: "a bonus
+#: to saving throws equal to your Charisma modifier (minimum bonus of +1)" —
+#: Foundry writes ``@abilities.cha.mod``.
+_FEATURE_EFFECT_VALUE_CORRECTIONS: dict[tuple[str, str, str], str] = {
+    ("aura-of-protection", "WOJ5r71FCDRmElea", "system.bonuses.abilities.save"): (
+        "max(1, @abilities.cha.mod)"
+    ),
+}
+
+
+def _apply_feature_effect_value_corrections(
+    slug: str, effects: list[PassiveEffect]
+) -> list[PassiveEffect]:
+    """Replace each change value ``_FEATURE_EFFECT_VALUE_CORRECTIONS`` names.
+    Copy-on-write like ``_apply_effect_change_corrections``."""
+    out: list[PassiveEffect] = []
+    for effect in effects:
+        changes = [
+            change.model_copy(update={"value": value})
+            if (value := _FEATURE_EFFECT_VALUE_CORRECTIONS.get((slug, effect.id, change.key)))
+            else change
+            for change in effect.changes
+        ]
+        if changes != effect.changes:
+            effect = effect.model_copy(update={"changes": changes})
+        out.append(effect)
+    return out
+
+
 def _apply_damage_reductions(slug: str, activities: list[Activity]) -> list[Activity]:
     """Set each activity's ``damage_reduction`` from ``_DAMAGE_REDUCTIONS``.
     Copy-on-write like ``_apply_activity_triggers``."""
@@ -2630,15 +2722,20 @@ def translate_spell_yaml(
         duration=_spell_duration(system.get("duration") or {}),
         materials=_spell_materials(system.get("materials") or {}),
         preparation=_spell_preparation(system.get("preparation") or {}),
-        activities=_apply_activity_effect_ref_corrections(
+        activities=_apply_areas(
             slug,
-            _apply_activity_triggers(
+            _apply_activity_effect_ref_corrections(
                 slug,
-                _apply_affects_corrections(
+                _apply_activity_triggers(
                     slug,
-                    _apply_spell_save_cover_overrides(
+                    _apply_affects_corrections(
                         slug,
-                        _apply_spell_damage_type_corrections(slug, _translate_activities(system)),
+                        _apply_spell_save_cover_overrides(
+                            slug,
+                            _apply_spell_damage_type_corrections(
+                                slug, _translate_activities(system)
+                            ),
+                        ),
                     ),
                 ),
             ),
@@ -3382,10 +3479,13 @@ def translate_feature_yaml(
         feature_type=feature_type,
         foundry_id=str(doc.get("_id") or ""),
         source_slug=source_slug,
-        activities=_apply_roll_modifiers(
-            slug, _apply_damage_reductions(slug, _translate_activities(system))
+        activities=_apply_areas(
+            slug,
+            _apply_roll_modifiers(
+                slug, _apply_damage_reductions(slug, _translate_activities(system))
+            ),
         ),
-        passive_effects=_passive_effects(doc),
+        passive_effects=_apply_feature_effect_value_corrections(slug, _passive_effects(doc)),
         advancement=_advancement(system),
         uses=_feature_uses(system),
         provenance=_provenance(yaml_path, ingest_date, ingest_version),

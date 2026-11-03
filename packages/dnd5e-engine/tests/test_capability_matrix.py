@@ -23,13 +23,14 @@ CAPABILITIES_MD = Path(__file__).resolve().parents[3] / "docs" / "capabilities.m
 #: Activity kinds the resolver actually turns into ``CombatEvent``s. A
 #: ``utility`` activity counts only when it carries effect riders — mirrors
 #: ``dnd5e_engine.activities.resolver.resolve_activity``; an allowlisted
-#: conjuration (``_CONJURED_SPELLS``) resolves too.
+#: conjuration (``_CONJURED_SPELLS``) resolves too, and so does an activity that
+#: leaves an area on the map (``Activity.area``: Fog Cloud, Darkness).
 MECHANICAL_KINDS = frozenset({"attack", "damage", "save", "heal", "check", "cast"})
 
 
 def _resolves(activity: dict[str, Any]) -> bool:
     kind = activity.get("kind")
-    if kind in MECHANICAL_KINDS:
+    if kind in MECHANICAL_KINDS or "area" in activity:
         return True
     return kind == "utility" and bool(activity.get("effects"))
 
@@ -104,8 +105,6 @@ def test_published_spell_counts_match_the_corpus(
 def test_named_inert_concentration_spells_really_are_inert(canonical_dir: Path) -> None:
     """The page names specific staples as inert; verify each actually is."""
     for slug in (
-        "darkness",
-        "fog-cloud",
         "wall-of-force",
         "silent-image",
         "globe-of-invulnerability",
@@ -886,6 +885,17 @@ _PROBES: dict[str, tuple[Any, str]] = {
             and "ActivityTriggerKind.HITS" in _src("orchestrator.py")
             and "def _fire_moment_triggers(" in _src("orchestrator.py")
             and "creature_enters_area" not in _src("orchestrator.py")
+        ),
+        "⚠️",
+    ),
+    # Areas stand on the map and their effects read live; what happens on
+    # entering or standing in one (E2's area triggers) is not built.
+    "Areas that stay on the map": (
+        lambda: (
+            "def _make_areas_for_intent(" in _src("orchestrator.py")
+            and "def apply_area_overlay(" in _src("spatial.py")
+            and "def effects_inside(" in _src("persistent_areas.py")
+            and "enters_area" not in _src("persistent_areas.py")
         ),
         "⚠️",
     ),

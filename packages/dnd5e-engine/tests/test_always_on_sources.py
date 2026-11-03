@@ -35,7 +35,7 @@ from dnd5e_engine.events import (
     HealingApplied,
 )
 from dnd5e_engine.lib_loader import set_lib_loader_for_tests
-from dnd5e_engine.orchestrator import _build_hydration_payload, _find_combatant
+from dnd5e_engine.orchestrator import _area_effects_on, _build_hydration_payload, _find_combatant
 from tests.c20_support import act, events, monster_turn, pc, start
 from tests.fork_support import BUNDLED, WithAssets, homebrew_feat
 
@@ -149,14 +149,17 @@ def test_a_feats_effects_reach_the_derived_sheet(build: dict[str, Any]):
 
 
 def test_a_seeded_changes_tokens_are_resolved_for_the_character():
-    """SRD 5.2 Aura of Protection ships its save bonus as ``@abilities.cha.mod``;
-    the save roller parses numbers and dice, so the token is resolved when the
-    effect is seeded (Charisma 16: +3) and a paladin's save rolls."""
+    """SRD 5.2 Aura of Protection ships its save bonus as
+    ``max(1, @abilities.cha.mod)``; the save roller parses numbers and dice, so
+    the token is resolved when the aura is seeded (Charisma 16: +3) and a
+    paladin's save rolls. The bonus reaches the paladin through the aura's
+    area (``tests/test_persistent_areas.py``), not as an effect on it."""
     set_lib_loader_for_tests(BUNDLED)
     paladin = pc("char:pal", charisma=16, class_slug="paladin", character_level=7)
     _handle, live = start([paladin], seed=2)
     payload = _build_hydration_payload(live, caster=_find_combatant(live, "char:pal"))
-    [aura] = [e for e in live.active_effects["char:pal"] if e.name == "Protected"]
+    assert "char:pal" not in live.active_effects
+    [aura] = _area_effects_on(live, "char:pal")
     assert [(c.key, c.value) for c in aura.changes] == [("system.bonuses.abilities.save", "3")]
     bonus = payload["save_modifiers"]["char:pal"]["passive_save_bonus"]
     assert bonus == "3"

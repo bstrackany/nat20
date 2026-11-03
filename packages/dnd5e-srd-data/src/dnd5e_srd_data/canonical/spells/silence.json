@@ -9,6 +9,14 @@
         "value": null
       },
       "applied_effects": [],
+      "area": {
+        "effects": [
+          "kjbKMAk1y5VUyEoT"
+        ],
+        "map": {
+          "blocks_verbal": true
+        }
+      },
       "consumption": {
         "scaling": {
           "allowed": false,

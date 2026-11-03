@@ -642,6 +642,50 @@ class AreaTargeted(BaseModel):
     excluded_ids: list[str]
 
 
+#: An area that stays on the map: ``placed`` where its use put it (Fog Cloud,
+#: Web) or ``anchored`` to the creature it surrounds and moving with it (SRD 5.2
+#: Spirit Guardians' and Aura of Protection's Emanations).
+AreaKind = Literal["placed", "anchored"]
+
+
+class AreaCreated(BaseModel):
+    """An area stays on the map (``LiveCombatView.areas``) until ``AreaEnded``.
+
+    ``source_id`` is the spell's, feature's, feat's or item's slug; ``origin``
+    is a placed area's point of origin and ``anchor_id`` the creature an
+    anchored one surrounds (each ``None`` for the other kind). ``cells`` are
+    the area's cells, sorted by column then row.
+    """
+
+    type: Literal["area_created"] = "area_created"
+    area_id: str
+    owner_id: str
+    source_id: str
+    kind: AreaKind
+    shape: AreaShape
+    size_ft: int
+    origin: str | None
+    anchor_id: str | None
+    cells: list[str]
+
+
+class AreaMoved(BaseModel):
+    """An anchored area followed the creature it surrounds; ``cells`` are its
+    new cells."""
+
+    type: Literal["area_moved"] = "area_moved"
+    area_id: str
+    cells: list[str]
+
+
+class AreaEnded(BaseModel):
+    """An area left the map: its concentration or duration ended, or the
+    creature it surrounds died or left the combat."""
+
+    type: Literal["area_ended"] = "area_ended"
+    area_id: str
+
+
 # ── spell / reaction outcomes ───────────────────────────────────────────────
 
 
@@ -860,6 +904,9 @@ CombatEvent = Annotated[
     | MoveFailed
     | AttackFailed
     | AreaTargeted
+    | AreaCreated
+    | AreaMoved
+    | AreaEnded
     | CastFailed
     | SpellCast
     | ReactionTriggered
@@ -909,6 +956,9 @@ ALL_COMBAT_EVENT_TYPES: tuple[type[BaseModel], ...] = (
     MoveFailed,
     AttackFailed,
     AreaTargeted,
+    AreaCreated,
+    AreaMoved,
+    AreaEnded,
     CastFailed,
     SpellCast,
     ActivityTriggered,
@@ -929,6 +979,10 @@ __all__ = [
     "ActorMoved",
     "AdvantageMode",
     "AdvantageSource",
+    "AreaCreated",
+    "AreaEnded",
+    "AreaKind",
+    "AreaMoved",
     "AreaShape",
     "AreaTargeted",
     "AttackFailed",

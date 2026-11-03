@@ -9,6 +9,11 @@
         "value": null
       },
       "applied_effects": [],
+      "area": {
+        "map": {
+          "lighting": "dim"
+        }
+      },
       "consumption": {
         "scaling": {
           "allowed": false,

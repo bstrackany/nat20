@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import heapq
 from collections import deque
-from collections.abc import Collection
+from collections.abc import Collection, Mapping
 from typing import Literal, Protocol, runtime_checkable
 
 from dnd5e_engine.activities.passive_stats import CombatantSenses
@@ -181,6 +181,32 @@ class GridTopology:
         self._lighting: dict[str, LightLevel] = dict(scene.lighting)
         self._default_lighting: LightLevel = scene.default_lighting
         self._obscurement: dict[str, Obscurement] = dict(scene.obscurement_cells)
+        self._scene = scene
+
+    def apply_area_overlay(
+        self,
+        *,
+        obscurement: Mapping[str, Obscurement],
+        lighting: Mapping[str, LightLevel],
+        difficult_terrain: Collection[str],
+    ) -> None:
+        """Lay the map changes of the areas in play over the scene, replacing the
+        previous overlay: SRD 5.2 Fog Cloud "The Sphere is Heavily Obscured",
+        Darkness "magical Darkness ... fills a 15-foot-radius Sphere", Grease
+        "turns it into Difficult Terrain". Every query below reads the result
+        (``can_see``, ``obscurement_on_cell``, ``light_on_cell``,
+        ``edge_distance`` and the paths built on it). An area's obscurement never
+        lowers the scene's, its light replaces the scene's on its cells, and
+        Difficult Terrain doesn't stack (a cell is difficult or not). Empty
+        arguments restore the scene as authored."""
+        scene = self._scene
+        self._difficult = set(scene.difficult_terrain_cells) | set(difficult_terrain)
+        self._lighting = {**scene.lighting, **lighting}
+        merged: dict[str, Obscurement] = dict(scene.obscurement_cells)
+        for cell, degree in obscurement.items():
+            if merged.get(cell) != "heavy":
+                merged[cell] = degree
+        self._obscurement = merged
 
     @property
     def cell_size_ft(self) -> int:

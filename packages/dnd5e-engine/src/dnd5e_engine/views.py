@@ -14,8 +14,12 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
+from dnd5e_srd_data.schema.common import AreaAffects, AreaMap
+
 from dnd5e_engine.activities.conjuration import TransformSource
+from dnd5e_engine.events import AreaKind, AreaShape
 from dnd5e_engine.outcome import CombatOutcome
+from dnd5e_engine.persistent_areas import sorted_cells
 from dnd5e_engine.types.combat import Combatant
 
 if TYPE_CHECKING:
@@ -61,6 +65,32 @@ class SummonView:
     spell_id: str
     stat_block_slug: str
     slot_level: int
+
+
+@dataclass(frozen=True)
+class AreaView:
+    """Read-only projection of one area on the map (``persistent_areas``):
+    SRD 5.2 Fog Cloud's Sphere where it was cast, Spirit Guardians' Emanation
+    around its caster. ``source_kind`` / ``source_id`` / ``source_name`` name
+    what made it; ``origin`` is a placed area's point of origin and
+    ``anchor_id`` the creature an anchored one surrounds. ``cells`` are sorted
+    by column then row; ``map`` is what the area changes about them, and
+    ``affects`` whom its ``effect_ids`` reach while they stand in it."""
+
+    area_id: str
+    owner_id: str
+    source_kind: str
+    source_id: str
+    source_name: str
+    kind: AreaKind
+    shape: AreaShape
+    size_ft: int
+    origin: str | None
+    anchor_id: str | None
+    cells: tuple[str, ...]
+    map: AreaMap
+    affects: AreaAffects
+    effect_ids: tuple[str, ...]
 
 
 @dataclass(frozen=True)
@@ -125,6 +155,9 @@ class LiveCombatView:
     transformations: dict[str, TransformView] = field(default_factory=dict)
     # C21 — summoned creatures keyed by entity id; empty when none is seated.
     summons: dict[str, SummonView] = field(default_factory=dict)
+    # The areas on the map keyed by ``area_id``, in the order they were made;
+    # empty when none stands.
+    areas: dict[str, AreaView] = field(default_factory=dict)
 
     @classmethod
     def from_live(cls, live: _LiveCombat) -> LiveCombatView:
@@ -207,10 +240,30 @@ class LiveCombatView:
                 )
                 for entity_id, s in live.summons.items()
             },
+            areas={
+                a.area_id: AreaView(
+                    area_id=a.area_id,
+                    owner_id=a.owner_id,
+                    source_kind=a.source_kind,
+                    source_id=a.source_slug,
+                    source_name=a.source_name,
+                    kind=a.kind,
+                    shape=a.shape,
+                    size_ft=a.template.size_ft,
+                    origin=a.origin,
+                    anchor_id=a.anchor_id,
+                    cells=tuple(sorted_cells(a.cells)),
+                    map=a.spec.map,
+                    affects=a.spec.affects,
+                    effect_ids=tuple(a.spec.effects),
+                )
+                for a in live.areas
+            },
         )
 
 
 __all__ = [
+    "AreaView",
     "ConstructView",
     "LiveCombatView",
     "MonsterActionUsesView",

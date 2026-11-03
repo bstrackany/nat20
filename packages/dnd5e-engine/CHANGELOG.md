@@ -16,6 +16,37 @@ caster takes. Requires the matching `dnd5e-srd-data`.
 
 ### Added
 
+- **Areas that stay on the map.** An activity the corpus marks with
+  `Activity.area` (`dnd5e-srd-data`, unreleased) leaves an area after its cast,
+  feature use or item use: **placed** at the cast's own point of origin and aim
+  (Fog Cloud, Darkness, Grease, Web, Sleet Storm, Entangle, Spike Growth,
+  Stinking Cloud, Moonbeam, Silence), or **anchored** to its user when the
+  template is an Emanation, moving with it (Spirit Guardians; Aura of
+  Protection, which an always-on feature has from `start_combat`). A size
+  formula resolves with the user's numbers and the cast level (Fog Cloud's
+  `20 * @item.level`). New module `persistent_areas` (`Area`, pure helpers;
+  `in_area`: a creature is in an area when any cell it occupies is). While an
+  area stands, `GridTopology.apply_area_overlay` lays its obscurement, light
+  and Difficult Terrain over the scene, so `can_see`, `obscurement_on_cell`,
+  `light_on_cell`, `edge_distance` and paths read them (Darkness is dark and
+  Heavily Obscured: Darkvision can't see into it). Its `effects` reach the
+  creatures inside, never copied: `_area_effects_on` joins a creature's own
+  effects in the save/check/AC projection and `_effects_in_play`; two areas
+  from one source don't stack (the higher slot, then the larger change, then
+  the more recent applies). Aura of Protection's save bonus reaches the paladin
+  and its allies in the aura, not while the paladin is Incapacitated; it is no
+  longer seeded on the paladin alone. A spell with a Verbal component cast from
+  inside a Silence is refused `CastFailed(reason="components_missing")`; a
+  placed area's `target_zone_id` is measured against the spell's range. An
+  area ends with the concentration that holds it (a concentration area holds
+  the caster's anchor, so Entangle no longer ends when its last Restrained
+  creature breaks free), its duration in rounds (`engine:areas-turn-end`, after
+  `engine:concentration-expiry`), or its bearer's death. New events
+  `AreaCreated`, `AreaMoved`, `AreaEnded`; `LiveCombatView.areas`
+  (`AreaView`). A combat that makes no area is unchanged, seed stream
+  included. Not yet: what happens on entering or standing in an area, moving
+  an area, walls, an area's conditions, monster and readied casts.
+
 - **Features that change a D20 Test after the roll.** `Interrupts` gains its
   second method, `before_d20_outcome(D20Outcome) -> D20Outcome`: a D20 Test
   rolled and not yet decided (kind, roller, opposer, natural, total, AC or DC,

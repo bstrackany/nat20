@@ -171,6 +171,9 @@ Mind) and a template the grid can't place keep the AI's single target. Each
 placed area emits `AreaTargeted`, whose `source_id` is the action's slug
 (`"fire-breath"`) or the spell's (`"fireball"`).
 
+An area that stays after its cast (Fog Cloud, Spirit Guardians, Aura of
+Protection) is a separate model: see [Areas on the map](areas.md).
+
 ## Vision and light
 
 Three optional `GridScene` fields model SRD 5.2 §Vision and Light:
@@ -195,7 +198,9 @@ attacking a target you cannot see is Disadvantage, and attacking from a position
 the target cannot see is Advantage, tagged with the `unseen` `AdvantageSource`.
 The model is entirely opt-in — a scene with no lighting data resolves exactly as
 a scene did before the fields existed. No light sources, and darkness does not
-apply the Blinded condition.
+apply the Blinded condition. An area on the map (Darkness, Fog Cloud, Moonbeam)
+lays its light and obscurement over these fields while it stands
+([Areas on the map](areas.md)).
 
 A composite predicate (`orchestrator.py::_combatant_can_see`) layers Blinded
 (viewer) and Invisible (target) on top of `can_see`: only Blindsight in range
