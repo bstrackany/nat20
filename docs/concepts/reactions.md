@@ -32,8 +32,30 @@ await submit_player_intent(
 await advance_monster_turn(handle)
 ```
 
-If you want a player to *choose* in the moment, your host has to ask them
-before their turn ends and arm accordingly. You cannot ask them mid-resolution.
+If you want a player to *choose* in the moment, install a `ReactionResolver`
+(below): the engine still never waits, but it asks the resolver before each
+armed reaction fires, and a resolver may stop the resolution by raising.
+
+## Choosing in the moment: `ReactionResolver`
+
+One object, installed for the process with `set_reaction_resolver` (as
+`set_monster_ai` installs a `MonsterAI`). Its default is the engine's own
+behaviour.
+
+- `fires(live, reactor, reaction, trigger, context) -> bool` is asked just
+  before an eligible reaction fires: an armed spell, feature or feat
+  (`reaction` is the armed entry), or an opportunity attack (`reaction` is
+  `None`, `trigger` is `"opportunity_attack"`). `context` is what it answers:
+  the `D20Outcome` of a roll it would change (Cutting Words), the
+  `IncomingDamage` it would reduce (Uncanny Dodge), else the id of the creature
+  whose act triggered it. The default says yes. `False` leaves the reaction
+  armed and lets the next eligible one answer, in the usual order.
+
+Nothing in the engine catches what `fires` raises, and it is asked before the
+Reaction, the use or slot is spent and before any die of the reaction is
+drawn. A host that asks a player can therefore raise, let the turn unwind,
+and replay the combat from its seed and intents once the player has answered,
+with the answer recorded so the resolver returns it the second time.
 
 ## Arming for the whole combat
 

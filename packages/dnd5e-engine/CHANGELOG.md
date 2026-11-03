@@ -16,6 +16,16 @@ caster takes. Requires the matching `dnd5e-srd-data`.
 
 ### Added
 
+- **`ReactionResolver`: whether a reaction fires, as one replaceable object.**
+  New module `reaction_resolver`, installed with `set_reaction_resolver` (both
+  exported). `fires(live, reactor, reaction, trigger, context)` is asked just
+  before an eligible armed reaction fires (`_pop_pending_reaction`, the d20
+  modifier path) and before each opportunity attack; `False` leaves it armed
+  and the next eligible one answers. `context` is the `D20Outcome`, the
+  `IncomingDamage`, or the triggering creature's id. Nothing catches what it
+  raises, and nothing is spent or drawn before it is asked, so a host can ask
+  a player and replay. The default says yes: behaviour is unchanged. No RNG.
+
 - **Always-on effects that count only while something holds.** A feature's or
   feat's always-on effect whose data sets `PassiveEffect.active_while`
   (`dnd5e-srd-data`, unreleased) counts only while its bearer has the named

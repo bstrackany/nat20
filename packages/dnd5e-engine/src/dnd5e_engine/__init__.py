@@ -62,6 +62,7 @@ from dnd5e_engine.outcome import (
     DeathRecord,
     LootDrop,
 )
+from dnd5e_engine.reaction_resolver import ReactionResolver, set_reaction_resolver
 from dnd5e_engine.rest import (
     HitDicePool,
     RecoveryPeriod,
@@ -115,6 +116,7 @@ __all__ = [
     "MonsterAI",
     "PartyMemberSpec",
     "PlayerIntent",
+    "ReactionResolver",
     "RecoveryPeriod",
     "RestOutcome",
     "RitualCast",
@@ -145,6 +147,7 @@ __all__ = [
     "resolve_short_rest",
     "roll_dice_str",
     "set_monster_ai",
+    "set_reaction_resolver",
     "start_combat",
     "submit_player_intent",
 ]

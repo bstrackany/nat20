@@ -314,6 +314,7 @@ from dnd5e_engine.types.effects import ActiveEffect, ActiveEffectChange, ActiveE
 from dnd5e_engine.views import LiveCombatView
 
 from .monster_ai import monster_ai
+from .reaction_resolver import reaction_resolver
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -13840,6 +13841,7 @@ def _pop_pending_reaction(
     triggering_actor_id: str,
     only_owner_id: str | None = None,
     eligible: Callable[[Combatant, _PendingReaction], bool] | None = None,
+    context: Any = None,
 ) -> _PendingReaction | None:
     """SRD §Reactions — pop the first pending reaction matching ``trigger``,
     scanning ``live.initiative`` in INITIATIVE ORDER (the documented firing
@@ -13857,6 +13859,10 @@ def _pop_pending_reaction(
     trigger in arming order (its priority), then continues in initiative order
     to the next candidate rather than stopping: Shield armed first with no slot
     left must not keep an Uncanny Dodge armed behind it from firing.
+
+    The installed ``ReactionResolver`` is asked last (``context`` is what the
+    reaction answers, else the triggering actor's id); one it declines is
+    skipped the same way.
     """
     for reactor in live.initiative:
         if reactor.entity_id == triggering_actor_id:
@@ -13882,7 +13888,9 @@ def _pop_pending_reaction(
             if pr.owner_id == reactor.entity_id and pr.trigger == trigger
         ]
         for match in matches:
-            if eligible is None or eligible(reactor, match):
+            if (eligible is None or eligible(reactor, match)) and reaction_resolver().fires(
+                live, reactor, match, trigger, triggering_actor_id if context is None else context
+            ):
                 live.pending_reactions.remove(match)
                 return match
     return None
@@ -14248,6 +14256,7 @@ def _reduce_with_armed_reaction(live: _LiveCombat, incoming: IncomingDamage) -> 
             triggering_actor_id=incoming.attacker_id,
             only_owner_id=incoming.target_id,
             eligible=_answers,
+            context=incoming,
         )
         reactor = _find_combatant(live, popped.owner_id) if popped is not None else None
         if popped is not None and reactor is not None:
@@ -14410,6 +14419,8 @@ def _fire_roll_modifier(
         formula = resolve_roll_data(formula, _owner_context(live, owner))
     helps = side != "enemy"
     if not worth_firing(modifier, outcome, helps=helps, reach=formula_reach(formula)):
+        return None
+    if not reaction_resolver().fires(live, owner, pending, "d20_test", outcome):
         return None
     live.pending_reactions.remove(pending)
     pool_id, cap, cost = pool
@@ -15541,6 +15552,8 @@ def _fire_opportunity_attacks_on_step(
         reactor = _find_combatant(live, reactor_id)
         mover = _find_combatant(live, mover_id)
         if reactor is None or mover is None:
+            continue
+        if not reaction_resolver().fires(live, reactor, None, "opportunity_attack", mover_id):
             continue
         _emit(
             live,
