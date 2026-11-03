@@ -2289,7 +2289,7 @@ def _apply_affects_corrections(slug: str, activities: list[Activity]) -> list[Ac
     return out
 
 
-#: ``(spell slug, activity _id)`` → when that activity fires. Foundry fires every
+#: ``(spell or feature slug, activity _id)`` → when that activity fires. Foundry fires every
 #: activity on use and has no field for a later moment, so the SRD 5.2 sentence
 #: that names the moment is the only source; each entry quotes it. Area and
 #: turn-count moments (Stinking Cloud's cloud, Storm of Vengeance's rounds,
@@ -2385,7 +2385,44 @@ _ACTIVITY_TRIGGERS: dict[tuple[str, str], ActivityTrigger] = {
     # the cast (which made the caster save against its own Blinded); no moment
     # names a hit on a creature in an area, so it is the host's to fire.
     ("holy-aura", "0kylpwRauH0WgW0G"): ActivityTrigger(kind=ActivityTriggerKind.LATER_USE),
+    # Dark One's Blessing: "When you reduce an enemy to 0 Hit Points, you gain
+    # Temporary Hit Points" (the "someone else" half is a copy of the activity,
+    # ``_ACTIVITY_TRIGGER_COPIES``).
+    ("dark-ones-blessing", "p3YSnjGDlLIbiLpC"): ActivityTrigger(
+        kind=ActivityTriggerKind.REDUCES_TO_ZERO, subject=ActivityTriggerSubject.CASTER
+    ),
 }
+
+
+#: ``(feature slug, activity _id)`` → further moments the activity fires at,
+#: each as a copy of it under a new ``_id`` (an activity carries one trigger).
+#: Temporary Hit Points from two copies on one kill don't add up: "you decide
+#: whether to keep the ones you have", and the engine keeps the higher.
+_ACTIVITY_TRIGGER_COPIES: dict[tuple[str, str], list[tuple[str, ActivityTrigger]]] = {
+    # Dark One's Blessing: "You also gain this benefit if someone else reduces
+    # an enemy within 10 feet of you to 0 Hit Points."
+    ("dark-ones-blessing", "p3YSnjGDlLIbiLpC"): [
+        (
+            "nat20DarkOneNear",
+            ActivityTrigger(
+                kind=ActivityTriggerKind.ENEMY_FALLS,
+                subject=ActivityTriggerSubject.CASTER,
+                within_ft=10,
+            ),
+        )
+    ],
+}
+
+
+def _append_activity_trigger_copies(slug: str, activities: list[Activity]) -> list[Activity]:
+    """Append a copy of each activity per ``_ACTIVITY_TRIGGER_COPIES`` entry,
+    under its own ``_id`` and trigger, after the activity it copies."""
+    out: list[Activity] = []
+    for act in activities:
+        out.append(act)
+        for copy_id, trigger in _ACTIVITY_TRIGGER_COPIES.get((slug, act.id), []):
+            out.append(act.model_copy(update={"id": copy_id, "trigger": trigger}))
+    return out
 
 
 #: ``(spell slug, effect _id)`` → the mechanical changes the effect's own SRD 5.2
@@ -3886,10 +3923,16 @@ def translate_feature_yaml(
         feature_type=feature_type,
         foundry_id=str(doc.get("_id") or ""),
         source_slug=source_slug,
-        activities=_apply_areas(
+        activities=_append_activity_trigger_copies(
             slug,
-            _apply_roll_modifiers(
-                slug, _apply_damage_reductions(slug, _translate_activities(system))
+            _apply_activity_triggers(
+                slug,
+                _apply_areas(
+                    slug,
+                    _apply_roll_modifiers(
+                        slug, _apply_damage_reductions(slug, _translate_activities(system))
+                    ),
+                ),
             ),
         ),
         passive_effects=_apply_effect_endings(

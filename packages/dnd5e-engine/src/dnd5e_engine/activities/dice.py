@@ -27,6 +27,7 @@ from typing import TYPE_CHECKING
 import d20
 
 from dnd5e_engine.activities import explode
+from dnd5e_engine.rules.uses import UsesRollData, evaluate_uses_formula
 
 if TYPE_CHECKING:
     from dnd5e_srd_data.schema.common import DamagePart, DamagePartBlock
@@ -80,6 +81,21 @@ def _bump_first_die_count(formula: str, die_increase: int) -> str:
     return re.sub(r"^(\d+)d", _bump, formula, count=1)
 
 
+def fold_min_max(expr: str) -> str:
+    """A dice-free ``max(...)`` / ``min(...)`` expression as the integer it comes
+    to; anything else unchanged. Foundry writes floors this way: SRD 5.2 Dark
+    One's Blessing "Temporary Hit Points equal to your Charisma modifier plus
+    your Warlock level (minimum of 1 Temporary Hit Point)" is ``max(1,
+    @abilities.cha.mod + @classes.warlock.levels)``, which ``d20`` can't parse.
+    Evaluated by the limited-use grammar (``rules.uses.evaluate_uses_formula``)
+    once the roll-data tokens are resolved; a formula with dice in it is left
+    for the parser to refuse."""
+    if "max(" not in expr and "min(" not in expr:
+        return expr
+    value = evaluate_uses_formula(expr, UsesRollData())
+    return expr if value is None else str(value)
+
+
 def _parse(expr: str) -> d20.Expression:
     """Parse ``expr``, re-raising d20 parse failures as ``ValueError``.
 
@@ -89,7 +105,7 @@ def _parse(expr: str) -> d20.Expression:
     wire these rolls in catch the stdlib class, so wrap at the single parse site.
     """
     try:
-        return explode.parse(expr)
+        return explode.parse(fold_min_max(expr))
     except d20.RollError as exc:
         raise ValueError(f"Unparseable dice expression: {expr!r}") from exc
 

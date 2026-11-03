@@ -329,6 +329,15 @@ caster takes. Requires the matching `dnd5e-srd-data`.
 
 ### Fixed
 
+- **A `max(...)` or `min(...)` in a heal or damage formula rolls.** The dice
+  parser refused a dice-free `max(1, 3 + 3)` ("Unparseable dice expression"),
+  so Dark One's Blessing crashed when fired. New
+  `activities.dice.fold_min_max` folds such an expression to its integer with
+  the limited-use grammar (`rules.uses.evaluate_uses_formula`) before `_parse`
+  reads it; one with dice inside is still refused. With the corpus marking it
+  (`dnd5e-srd-data`, unreleased), Dark One's Blessing grants its Temporary Hit
+  Points on a kill and on an enemy falling within 10 feet; both on one kill
+  keep the higher (the `TempHpApplied` fold already did).
 - **Hypnotic Pattern leaves a creature immune to Charmed alone.** The
   Hypnotized effect lists Charmed and Incapacitated side by side, so a raging
   Berserker (Mindless Rage: Immunity to Charmed) was still Incapacitated, which

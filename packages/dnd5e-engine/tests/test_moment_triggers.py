@@ -7,6 +7,7 @@ activity resolves against its subject.
 
 from __future__ import annotations
 
+import random
 from typing import Any
 
 import pytest
@@ -16,6 +17,7 @@ from dnd5e_srd_data.schema.common import (
     HealActivity,
 )
 
+from dnd5e_engine.activities.dice import fold_min_max, roll_expr
 from dnd5e_engine.events import (
     ActivityTriggered,
     AttackRolled,
@@ -32,7 +34,7 @@ from dnd5e_engine.orchestrator import _emit, _fire_moment_triggers, _LiveCombat,
 from dnd5e_engine.spatial import cell_id as cell
 from dnd5e_engine.trigger_moments import Moment, cast_matches, moments_of, subject_candidates
 from dnd5e_engine.triggers import HeldUse
-from tests.c20_support import act, events, monster_turn, pc, start
+from tests.c20_support import act, combatant, events, monster_turn, pc, start
 from tests.fork_support import BUNDLED, WithAssets, cast, caster, goblin, homebrew_feat
 
 B = "char:caster"
@@ -297,3 +299,71 @@ def test_an_enemy_an_area_drops_at_its_turn_end_falls():
     act(handle, F, intent_type="pass")
     assert [d.target_id for d in events(live, Death)] == [F]
     assert [f for f in _fired(live) if f[0] == "enemy_falls"] == [("enemy_falls", B, B)]
+
+
+# ── Dark One's Blessing ──────────────────────────────────────────────────────
+
+
+@pytest.mark.parametrize(
+    ("expr", "folded"),
+    [
+        ("max(1, 3 + 3)", "6"),
+        ("max(1, -1 + 0)", "1"),
+        ("min(5, 2 * 4)", "5"),
+        ("max(1d4, 2)", "max(1d4, 2)"),  # dice: left for the parser
+        ("2d6+3", "2d6+3"),
+    ],
+)
+def test_a_dice_free_max_or_min_folds_to_its_value(expr: str, folded: str):
+    assert fold_min_max(expr) == folded
+
+
+def test_a_max_formula_rolls():
+    assert roll_expr("max(1, 3 + 3)", random.Random(1)) == 6
+    with pytest.raises(ValueError, match="Unparseable dice expression"):
+        roll_expr("max(1d4, 2)", random.Random(1))
+
+
+@pytest.mark.parametrize(
+    ("foe_at", "fired"),
+    [
+        # 5 feet away: the kill is also "an enemy within 10 feet" falling.
+        (cell(1, 0), ["enemy_falls", "reduces_to_zero"]),
+        (cell(5, 0), ["reduces_to_zero"]),
+    ],
+)
+def test_dark_ones_blessing_grants_temporary_hit_points_on_a_kill(foe_at: str, fired: list[str]):
+    """SRD 5.2 Dark One's Blessing: "When you reduce an enemy to 0 Hit Points,
+    you gain Temporary Hit Points equal to your Charisma modifier plus your
+    Warlock level (minimum of 1 Temporary Hit Point). You also gain this
+    benefit if someone else reduces an enemy within 10 feet of you to 0 Hit
+    Points." CHA 16 and Warlock 3: 6. Gained twice on one kill, they don't add
+    up (Temporary Hit Points: "you decide whether to keep the ones you have")."""
+    warlock = pc(
+        "char:wlk",
+        class_slug="warlock",
+        subclass_slug="fiend",
+        character_level=3,
+        charisma=16,
+        spells_known=["eldritch-blast"],
+    )
+    handle, live = start(
+        [warlock], encounter=[goblin(hp_current=1, hp_max=1, ac=1, zone_id=foe_at)], seed=4
+    )
+    cast(handle, "eldritch-blast", actor_id="char:wlk", target_id=F)
+    assert [d.target_id for d in events(live, Death)] == [F]
+    assert sorted(f[0] for f in _fired(live)) == fired
+    assert [t.amount for t in events(live, TempHpApplied)] == [6] * len(fired)
+    assert combatant(live, "char:wlk").temp_hp == 6
+
+
+def test_dark_ones_blessing_fires_when_someone_else_drops_an_enemy_nearby():
+    warlock = pc("char:wlk", class_slug="warlock", subclass_slug="fiend", character_level=3)
+    fighter = pc("char:ftr", strength=18, attack_bonus=10, zone_id=cell(1, 1), initiative=25)
+    handle, live = start(
+        [warlock, fighter], encounter=[goblin(hp_current=1, hp_max=1, ac=1)], seed=4
+    )
+    act(handle, "char:ftr", intent_type="attack", weapon_id="longsword", target_id=F)
+    assert [d.target_id for d in events(live, Death)] == [F]
+    assert _fired(live) == [("enemy_falls", "char:wlk", "char:wlk")]
+    assert combatant(live, "char:wlk").temp_hp == 3  # CHA 10, Warlock 3

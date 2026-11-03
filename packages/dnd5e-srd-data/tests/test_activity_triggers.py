@@ -21,7 +21,12 @@ from dnd5e_srd_data import (
     BundledAssetLoader,
 )
 from dnd5e_srd_data.schema.common import SaveActivity
-from tools.translators.foundry import _ACTIVITY_TRIGGERS, _apply_activity_triggers
+from tools.translators.foundry import (
+    _ACTIVITY_TRIGGER_COPIES,
+    _ACTIVITY_TRIGGERS,
+    _append_activity_trigger_copies,
+    _apply_activity_triggers,
+)
 
 LOADER = BundledAssetLoader()
 CANONICAL = Path(__file__).resolve().parent.parent / "src" / "dnd5e_srd_data" / "canonical"
@@ -173,7 +178,12 @@ def test_every_trigger_in_the_table_reached_the_corpus_and_nothing_else_has_one(
                 shipped[(data["slug"], activity["id"])] = ActivityTrigger.model_validate(
                     activity["trigger"]
                 )
-    assert shipped == _ACTIVITY_TRIGGERS
+    copies = {
+        (slug, copy_id): trigger
+        for (slug, _), added in _ACTIVITY_TRIGGER_COPIES.items()
+        for copy_id, trigger in added
+    }
+    assert shipped == _ACTIVITY_TRIGGERS | copies
 
 
 def test_the_table_is_a_no_op_for_unmapped_activities() -> None:
@@ -187,3 +197,23 @@ def test_the_table_is_a_no_op_for_unmapped_activities() -> None:
         None,
         ActivityTrigger(kind="turn_end", once=True),
     ]
+
+
+def test_dark_ones_blessing_fires_on_a_kill_and_on_a_fall_nearby() -> None:
+    """SRD 5.2 Dark One's Blessing: "When you reduce an enemy to 0 Hit Points,
+    you gain Temporary Hit Points ... You also gain this benefit if someone else
+    reduces an enemy within 10 feet of you to 0 Hit Points." One activity per
+    moment: the second is a copy of the first under its own id."""
+    feature = LOADER.get_feature("dark-ones-blessing")
+    assert feature is not None
+    assert "someone else reduces an enemy within 10 feet of you" in feature.description
+    kill, near = feature.activities
+    assert (kill.id, near.id) == ("p3YSnjGDlLIbiLpC", "nat20DarkOneNear")
+    assert kill.trigger == ActivityTrigger(kind="reduces_to_zero", subject="caster")
+    assert near.trigger == ActivityTrigger(kind="enemy_falls", subject="caster", within_ft=10)
+    assert near.model_copy(update={"id": kill.id, "trigger": kill.trigger}) == kill
+    bare = [kill.model_copy(update={"trigger": None})]
+    rebuilt = _append_activity_trigger_copies(
+        "dark-ones-blessing", _apply_activity_triggers("dark-ones-blessing", bare)
+    )
+    assert rebuilt == list(feature.activities)

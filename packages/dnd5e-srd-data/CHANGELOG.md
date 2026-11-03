@@ -182,6 +182,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Dark One's Blessing fires.** The feature's activity had no trigger. It now
+  fires on `reduces_to_zero` ("When you reduce an enemy to 0 Hit Points"), from
+  `_ACTIVITY_TRIGGERS`, which the feature translator now applies, and a copy
+  of it, `nat20DarkOneNear`, on `enemy_falls` within 10 feet ("if someone else
+  reduces an enemy within 10 feet of you to 0 Hit Points"), from the new
+  `_ACTIVITY_TRIGGER_COPIES` table (an activity carries one trigger). One
+  canonical file.
 - **An effect that depends on a condition carries it.** New
   `PassiveEffect.while_status` (left out of a dump when unset) names the
   condition the rest of an applied effect depends on, set by the translator's

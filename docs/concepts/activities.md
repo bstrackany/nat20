@@ -85,6 +85,12 @@ a third failed death save. Each event fires a moment once, and an event from
 before a use was held (the use's own cast) is not its moment. A hit's rider
 counts (Hex's extra damage that drops the creature is the caster reducing it);
 what an activity fired on one of these four moments emits fires none of them.
+The SRD corpus marks Dark One's Blessing: its activity fires on
+`reduces_to_zero`, and a copy of it (`nat20DarkOneNear`, from the translator's
+`_ACTIVITY_TRIGGER_COPIES`: an activity carries one trigger) on `enemy_falls`
+within 10 feet. A kill nearby fires both; Temporary Hit Points don't add up, so
+the higher is kept. Its `max(1, ...)` formula is folded to a number before the
+dice parser reads it (`activities.dice.fold_min_max`).
 
 A `later_use` activity (Sunbeam's new line, Haste's lethargy, Holy Aura's save
 for a Fiend or Undead that hits a creature in the aura) only keeps the cast

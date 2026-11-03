@@ -77,6 +77,120 @@
           "width": ""
         }
       },
+      "trigger": {
+        "against_bearer": false,
+        "also_at_cast": false,
+        "attack": "",
+        "ends_on_save": false,
+        "kind": "reduces_to_zero",
+        "once": false,
+        "once_per_turn": false,
+        "subject": "caster"
+      },
+      "uses": {
+        "max": "",
+        "recovery": [],
+        "spent": 0
+      },
+      "visibility": {
+        "identifier": "",
+        "level": {
+          "max": null,
+          "min": null
+        },
+        "require_attunement": false,
+        "require_identification": false,
+        "require_magic": false
+      }
+    },
+    {
+      "activation": {
+        "condition": "When you reduce an enemy to 0 Hit Points or  an enemy within 10 feet of you is reduced to 0 Hit Points",
+        "override": false,
+        "reaction_conditions": [],
+        "type": "",
+        "value": null
+      },
+      "applied_effects": [],
+      "consumption": {
+        "scaling": {
+          "allowed": false,
+          "max": ""
+        },
+        "spell_slot": true,
+        "targets": []
+      },
+      "description": {
+        "chat_flavor": ""
+      },
+      "duration": {
+        "concentration": false,
+        "override": false,
+        "special": "",
+        "units": "inst",
+        "value": null
+      },
+      "effects": [],
+      "flags": {},
+      "healing": {
+        "bonus": "",
+        "custom": {
+          "enabled": true,
+          "formula": "max(1, @abilities.cha.mod + @classes.warlock.levels)"
+        },
+        "denomination": null,
+        "number": null,
+        "scaling": {
+          "formula": "",
+          "mode": "",
+          "number": 1
+        },
+        "types": [
+          "temphp"
+        ]
+      },
+      "id": "nat20DarkOneNear",
+      "img": "",
+      "kind": "heal",
+      "name": "",
+      "range": {
+        "override": false,
+        "special": "",
+        "units": "ft",
+        "value": "10"
+      },
+      "sort": 0,
+      "target": {
+        "affects": {
+          "choice": false,
+          "count": "",
+          "special": "",
+          "type": "self"
+        },
+        "override": false,
+        "prompt": false,
+        "template": {
+          "contiguous": false,
+          "count": "",
+          "height": "",
+          "size": "",
+          "stationary": false,
+          "type": "",
+          "units": "ft",
+          "width": ""
+        }
+      },
+      "trigger": {
+        "against_bearer": false,
+        "also_at_cast": false,
+        "attack": "",
+        "ends_on_save": false,
+        "kind": "enemy_falls",
+        "once": false,
+        "once_per_turn": false,
+        "subject": "caster",
+        "within_ft": 10
+      },
       "uses": {
         "max": "",
         "recovery": [],
