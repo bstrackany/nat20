@@ -102,6 +102,7 @@ def test_a_readied_shield_fires_through_its_slotless_cast() -> None:
         "class_slug": "fighter",
         "spell_abilities": {"shield": "int"},
         "slotless_casts": ("shield",),
+        "ac": 1,  # the foe's attack hits, which is when Shield answers
     }
     handle, live = start([pc(**hero)], seed=1)
     act(

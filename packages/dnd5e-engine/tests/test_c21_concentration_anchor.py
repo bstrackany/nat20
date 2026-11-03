@@ -240,10 +240,12 @@ def test_a_monster_cast_is_anchored_when_its_target_saves(seed: int, anchored: b
 
 
 def test_a_readied_concentration_spell_now_concentrates() -> None:
-    """A readied Fog Cloud fires on the foe's attack as a self-cast; the
-    readied site now runs the same fold, so the spell concentrates (1 hour:
-    600 rounds). Seed 1: the cast draws nothing; the foe's d20 5 misses AC 25."""
-    hero = pc(spells_known=["fog-cloud"], spell_slots={1: 1}, ac=25)
+    """A readied Fog Cloud fires on the foe's hit as a self-cast, after the
+    roll and inside the foe's resolution; the readied site runs the same fold,
+    so the spell concentrates (1 hour: 600 rounds), and the foe's own fold
+    leaves it alone. Seed 1: the foe's d20 5 hits AC 1; the cast draws nothing;
+    Constitution 30 holds the concentration through the hit's damage."""
+    hero = pc(spells_known=["fog-cloud"], spell_slots={1: 1}, ac=1, constitution=30)
     handle, live = start([hero], seed=1)
     act(
         handle,
@@ -260,3 +262,7 @@ def test_a_readied_concentration_spell_now_concentrates() -> None:
     ]
     assert live.concentration_rounds_remaining["char:hero"] == 600
     assert combatant(live, "char:hero").concentration_effect_id == "effect:fog-cloud"
+    assert set(live.concentration_chain) == {"char:hero"}
+    assert all(
+        c.concentration_effect_id is None for c in live.initiative if c.entity_id != "char:hero"
+    )

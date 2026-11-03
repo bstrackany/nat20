@@ -46,7 +46,7 @@ behaviour.
   before an eligible reaction fires: an armed spell, feature or feat
   (`reaction` is the armed entry), or an opportunity attack (`reaction` is
   `None`, `trigger` is `"opportunity_attack"`). `context` is what it answers:
-  the `D20Outcome` of a roll it would change (Cutting Words), the
+  the `D20Outcome` of a roll it would change (Shield, Cutting Words), the
   `IncomingDamage` it would reduce (Uncanny Dodge), else the id of the creature
   whose act triggered it. The default says yes. `False` leaves the reaction
   armed and lets the next eligible one answer, in the usual order.
@@ -176,8 +176,15 @@ Not covered: death saves, the concentration check and the end-of-turn repeat
 save (resolved outside the activity resolvers), damage rolls (Cutting Words'
 other use), Advantage or Disadvantage imposed on another creature's roll, and
 a Portent-style replacement chosen before the roll, and a spell carrying
-`roll_modifier`. Shield still fires before the attack roll it answers, with
-its +5 folded into that comparison (the design note linked at the end).
+`roll_modifier`.
+
+Shield answers the hit itself: an attack roll that would hit fires the target's
+first armed `hit_by_attack` reaction after the roll and before the hit stands,
+and the AC its effect adds (`+5`, "including against the triggering attack")
+judges the roll again. `AttackRolled.target_ac` reports the raised AC. A
+Multiattack's later swings in the same resolution meet the raised AC too; an
+attack that misses leaves Shield armed and its slot unspent. The reaction's
+own events come before the `AttackRolled` they answered.
 
 ## Recognized triggers
 
@@ -185,7 +192,7 @@ its +5 folded into that comparison (the design note linked at the end).
 
 | Trigger | Fires when |
 |---|---|
-| `"hit_by_attack"` | The reactor is hit by an attack (Shield) |
+| `"hit_by_attack"` | An attack roll against the reactor would hit: after the roll, before the hit stands (Shield) |
 | `"missed_by_attack"` | An attack roll against the reactor misses (a consumer's own reaction); fires after that resolution |
 | `"d20_test"` | A D20 Test is rolled and not yet decided (a `roll_modifier` feature; armed with `"arm"`) |
 | `"cast_spell"` | Another creature casts a spell (Counterspell) |
@@ -225,6 +232,6 @@ Neither is reachable by accident — the host chooses to arm the reaction — bu
 neither is gated by the engine.
 
 For the full design, including how the queue drains relative to attack
-resolution and why Shield's AC bonus lands before the hit/miss comparison, see
+resolution (Shield then fired before the roll; it now fires after it, as above), see
 the [reaction queue design note](../dev/reaction-queue.md).
 

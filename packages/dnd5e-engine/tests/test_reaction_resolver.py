@@ -1,7 +1,9 @@
 """``ReactionResolver`` — whether a reaction fires.
 
 The default says yes to every eligible reaction, so every other test in this
-suite is its regression check; these install one resolver at a time.
+suite is its regression check; these install one resolver at a time. Also
+here: Shield answering an attack roll as it hits (``_raise_ac_when_hit``)
+rather than before it is rolled.
 """
 
 from __future__ import annotations
@@ -12,7 +14,7 @@ import pytest
 
 from dnd5e_engine import ReactionResolver, set_reaction_resolver
 from dnd5e_engine.events import AttackRolled, ReactionTriggered
-from dnd5e_engine.interrupts import IncomingDamage
+from dnd5e_engine.interrupts import D20Outcome, IncomingDamage, raised_target
 from dnd5e_engine.orchestrator import _fire_opportunity_attacks_on_step
 from dnd5e_engine.reaction_resolver import reaction_resolver
 from dnd5e_engine.spatial import cell_id
@@ -77,6 +79,23 @@ def test_the_default_fires_every_eligible_reaction():
     assert reaction_resolver().fires(None, None, None, "hit_by_attack", None) is True
 
 
+def test_a_declined_shield_stays_armed_and_the_hit_stands():
+    resolver = _Recording(answer=False)
+    set_reaction_resolver(resolver)
+    _, live = _wizard(ac=1)
+    monster_turn(_)
+    [swing] = _goblin_swings(live)
+    assert swing.is_hit
+    assert swing.target_ac == 1
+    assert not events(live, ReactionTriggered)
+    assert live.spell_slots_by_entity[PC] == {1: 2}
+    assert any(pr.spell_id == "shield" for pr in live.pending_reactions)
+    [(reactor, trigger, context)] = resolver.asked
+    assert (reactor, trigger) == (PC, "hit_by_attack")
+    assert isinstance(context, D20Outcome)
+    assert context.succeeded
+
+
 def test_a_resolver_that_raises_stops_the_resolution_before_anything_is_spent():
     """A host asking a player raises; the engine catches nothing, and the
     Reaction, the slot and the armed entry are all still there."""
@@ -119,3 +138,49 @@ def test_a_declined_opportunity_attack_is_not_made():
     assert resolver.asked == [("mon:foe", "opportunity_attack", PC)]
     assert not events(live, AttackRolled)
     assert next(c for c in live.initiative if c.entity_id == "mon:foe").reaction_available
+
+
+# ── Shield answers the hit, after the roll ───────────────────────────────────
+
+
+def test_shield_is_not_spent_on_an_attack_that_misses():
+    handle, live = _wizard(ac=30)
+    monster_turn(handle)
+    [swing] = _goblin_swings(live)
+    assert not swing.is_hit
+    assert not events(live, ReactionTriggered)
+    assert live.spell_slots_by_entity[PC] == {1: 2}
+
+
+def test_shield_answers_a_hit_and_the_roll_is_judged_against_the_raised_ac():
+    """SRD 5.2 Shield: "+5 bonus to AC, including against the triggering
+    attack" — the goblin's hit on AC 1 is judged again against AC 6, and the
+    roll's event reports the AC it stood against."""
+    handle, live = _wizard(ac=1)
+    monster_turn(handle)
+    [swing] = _goblin_swings(live)
+    [shield] = events(live, ReactionTriggered)
+    assert shield.reaction_name == "shield"
+    assert live.event_log.index(shield) < live.event_log.index(swing)
+    assert swing.target_ac == 6
+    assert swing.is_hit == (swing.natural == 20 or swing.roll_total >= 6)
+    assert live.spell_slots_by_entity[PC] == {1: 1}
+
+
+@pytest.mark.parametrize(
+    ("natural", "total", "hits"),
+    [(15, 17, True), (12, 14, False), (20, 21, True)],
+)
+def test_raised_target_judges_the_roll_again(natural, total, hits):
+    outcome = D20Outcome(
+        kind="attack",
+        roller_id="mon:foe",
+        opposer_id=PC,
+        natural=natural,
+        total=total,
+        target=11,
+        succeeded=True,
+        rule=lambda n, t: n == 20 or (n != 1 and t >= 11),
+    )
+    raised = raised_target(outcome, 5)
+    assert (raised.target, raised.succeeded) == (16, hits)

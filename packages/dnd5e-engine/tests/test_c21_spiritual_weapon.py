@@ -471,11 +471,14 @@ def test_the_cultist_fanatics_spiritual_weapon_is_no_monster_cast() -> None:
 
 
 def test_a_readied_concentration_spell_stays_its_owners() -> None:
-    """The force's immediate attack fires its target's readied Fog Cloud before
-    the cast resolves, as every attack drains reactions: the Fog Cloud
-    concentrates on the hero, and the cleric holds only its Spiritual Weapon.
-    Seed 9: the Fog Cloud draws nothing; d20 15 + 6 misses AC 30."""
-    hero = pc(spells_known=["fog-cloud"], spell_slots={1: 1}, ac=30, zone_id=cell_id(0, 1))
+    """The force's immediate attack hits and fires its target's readied Fog
+    Cloud inside the cast's resolution: the Fog Cloud concentrates on the
+    hero, and the cleric holds only its Spiritual Weapon.
+    Seed 9: d20 15 + 6 hits AC 1; the Fog Cloud draws nothing; Constitution 30
+    holds it through the hit's damage."""
+    hero = pc(
+        spells_known=["fog-cloud"], spell_slots={1: 1}, ac=1, constitution=30, zone_id=cell_id(0, 1)
+    )
     handle, live = start([hero, cleric(initiative=19)], seed=9)
     act(
         handle,

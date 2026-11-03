@@ -276,6 +276,18 @@ caster takes. Requires the matching `dnd5e-srd-data`.
 
 ### Changed
 
+- **Shield answers the hit, after the roll.** A `hit_by_attack` reaction no
+  longer fires before every attack roll at its owner (the PC attack and
+  construct path, the monster path and opportunity attacks): it fires from
+  `before_d20_outcome` when the roll would hit, and the AC its effect adds
+  judges that roll again (`interrupts.raised_target`), and the resolution's
+  later rolls at that creature. `AttackRolled.target_ac` reports the AC the roll
+  stood against. An attack that misses leaves Shield armed and its slot
+  unspent; spell attack rolls now draw it too. The reaction's own events are
+  skipped by the attacker's concentration and lifecycle folds
+  (`_LiveCombat.reaction_event_spans`, `_own_events`). No RNG change: Shield
+  draws no dice.
+
 - **Foundry's exploding dice roll.** `activities/explode.py` reads `x`,
   `x<cap>` and `x[<cap>]=<face>` in a damage formula: each die showing the
   face adds another, which may explode too, up to the cap for the term.

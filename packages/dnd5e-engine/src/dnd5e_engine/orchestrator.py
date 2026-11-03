@@ -215,6 +215,7 @@ from dnd5e_engine.interrupts import (
     D20Outcome,
     IncomingDamage,
     Interrupts,
+    raised_target,
     reduce_damage,
     reduction_activity,
     reduction_answers,
@@ -3119,20 +3120,9 @@ def _resolve_monster_attack_activities(
     future hook added to one caller can't silently miss the other.
     ``cover_origin`` is an area's point of origin (``_resolve_monster_area``).
     """
-    # SRD §Reactions — drain the attacked PC's pending ``hit_by_attack``
-    # reaction (Shield) BEFORE the sidecar projection below, so the
-    # just-applied +5 AC effect folds into THIS attack's hydration
-    # payload — the monster-attacker / PC-defender direction. Shield's own
-    # resolution draws no dice, so the attack's d20 keeps its seed-stream
-    # position. SRD 5.2 Shield answers "being hit by an attack roll": a
-    # save action (a Breath Weapon) leaves it readied.
-    if any(isinstance(a, AttackActivity) for a in activities):
-        _drain_targeted_reactions(
-            live,
-            trigger="hit_by_attack",
-            triggering_actor_id=actor.entity_id,
-            targets=target_list,
-        )
+    # SRD 5.2 Shield answers "being hit by an attack roll": the attacked
+    # creature's ``hit_by_attack`` reaction fires after the roll, as it hits
+    # (``_raise_ac_when_hit``); a save action (a Breath Weapon) leaves it armed.
     # The orchestrator owns the per-entity passive sidecars; project them
     # once and hand the two dicts ``build_activity_context`` needs in (it
     # stays pure — no orchestrator import, no double-compute). Mirrors the
@@ -3408,6 +3398,11 @@ class _LiveCombat:
     # whole combat (``_PendingReaction.standing``): re-queued at the owner's
     # turn start whenever they are not pending (``_hook_rearm_standing_reactions``).
     standing_reactions: list[_PendingReaction] = field(default_factory=list)
+    #: ``event_log`` index ranges ``[start, end)`` a reaction emitted while it
+    #: fired inside another creature's resolution (Shield answering a hit,
+    #: ``_raise_ac_when_hit``): that resolution's own folds skip them
+    #: (``_own_events``), the reaction having folded them already.
+    reaction_event_spans: list[tuple[int, int]] = field(default_factory=list)
     # The uses whose activities fire later (``Activity.trigger``): Acid Arrow's
     # lingering acid, Hex's extra damage. Made by
     # ``_hold_use`` when a cast, feature or item use resolves; walked by the
@@ -6841,7 +6836,7 @@ def _writeback_concentration(live: _LiveCombat, caster: Combatant, pre_event_cou
     is the one who emits the concentration spell. Events on prior turns
     are ignored via ``pre_event_count`` slicing.
     """
-    new_events = live.event_log[pre_event_count:]
+    new_events = _own_events(live, pre_event_count)
     tracked_name: str | None = None
     for ev in new_events:
         if isinstance(ev, EffectApplied) and ev.effect.flags.get("concentration"):
@@ -6923,7 +6918,7 @@ def _record_effect_lifecycle_links(
     ``pre_event_count`` slice). Events from prior turns have already
     been folded in; re-walking them would double-count.
     """
-    new_events = live.event_log[pre_event_count:]
+    new_events = _own_events(live, pre_event_count)
     # SRD 5.2 §Concentration — "You lose Concentration on an effect the
     # moment you start casting a spell that requires Concentration."
     # (Foundry mixin.mjs:470-476 ends the oldest effect before beginning
@@ -11879,9 +11874,20 @@ def _effects_applied_since(live: _LiveCombat, pre_event_count: int) -> set[tuple
     """The identities of every effect applied by the events since ``pre_event_count``."""
     return {
         (ev.effect.target_id, ev.effect.id, ev.effect.origin)
-        for ev in live.event_log[pre_event_count:]
+        for ev in _own_events(live, pre_event_count)
         if isinstance(ev, EffectApplied)
     }
+
+
+def _own_events(live: _LiveCombat, pre_event_count: int) -> list[CombatEvent]:
+    """The events since ``pre_event_count``, less those a reaction emitted
+    while firing inside this resolution (``live.reaction_event_spans``)."""
+    spans = [(start, end) for start, end in live.reaction_event_spans if end > pre_event_count]
+    return [
+        ev
+        for index, ev in enumerate(live.event_log[pre_event_count:], start=pre_event_count)
+        if not any(start <= index < end for start, end in spans)
+    ]
 
 
 def _record_use_effects(live: _LiveCombat, use: HeldUse, pre_event_count: int) -> None:
@@ -13784,23 +13790,12 @@ def _drain_pre_resolution_reactions(
     """Drain target-owned pending reactions for a resolving PC intent and a
     construct cast (Spiritual Weapon's immediate attack).
 
-    ``"attack"`` intents fire ``hit_by_attack`` reactions (Shield's +5 AC
-    lands before the hit/miss comparison); a ``magic-missile`` cast fires
-    ``targeted_by_magic_missile`` reactions, returning the target ids whose
-    reaction fired so the caller can inject the force carve-out. Every
-    other intent drains nothing (the overwhelmingly common case).
+    A ``magic-missile`` cast fires ``targeted_by_magic_missile`` reactions,
+    returning the target ids whose reaction fired so the caller can inject
+    the force carve-out. Every other intent drains nothing: ``hit_by_attack``
+    reactions (Shield) fire after the attack roll, as it hits
+    (``_raise_ac_when_hit``).
     """
-    if intent.intent_type == "attack" or (
-        intent.intent_type == "cast_spell"
-        and CONJURATION_ALLOWLIST.get(intent.spell_id or "") == "construct"
-    ):
-        _drain_targeted_reactions(
-            live,
-            trigger="hit_by_attack",
-            triggering_actor_id=current.entity_id,
-            targets=targets,
-        )
-        return set()
     if intent.intent_type == "cast_spell" and intent.spell_id == "magic-missile":
         return _drain_targeted_reactions(
             live,
@@ -14200,12 +14195,61 @@ class _ArmedInterrupts(Interrupts):
 
     def __init__(self, live: _LiveCombat) -> None:
         self._live = live
+        #: AC an armed reaction raised during this resolution, per creature
+        #: (``_raise_ac_when_hit``).
+        self._raised: dict[str, int] = {}
 
     def before_damage_applied(self, incoming: IncomingDamage) -> dict[str, int]:
         return _reduce_with_armed_reaction(self._live, incoming)
 
     def before_d20_outcome(self, outcome: D20Outcome) -> D20Outcome:
+        outcome = _raise_ac_when_hit(self._live, outcome, self._raised)
         return _settle_d20_with_armed_modifier(self._live, outcome)
+
+
+def _raise_ac_when_hit(
+    live: _LiveCombat, outcome: D20Outcome, raised: dict[str, int]
+) -> D20Outcome:
+    """SRD 5.2 Shield: "Reaction, which you take when you are hit by an attack
+    roll ... you have a +5 bonus to AC, including against the triggering
+    attack". An attack roll that would hit fires the target's first armed
+    ``hit_by_attack`` reaction (``_pop_pending_reaction``, as before the roll
+    it used to) after the roll and before the hit stands; the AC its effects
+    add (``ac.bonus`` changes) counts against this roll, and against the rest
+    of this resolution's rolls at that creature (a Multiattack's later swings,
+    whose context was built before it fired). Later resolutions read the
+    effect itself. Returns the roll that stands."""
+    if outcome.kind != "attack":
+        return outcome
+    if raised.get(outcome.opposer_id):
+        outcome = raised_target(outcome, raised[outcome.opposer_id])
+    target = _find_combatant(live, outcome.opposer_id)
+    if not outcome.succeeded or target is None:
+        return outcome
+    popped = _pop_pending_reaction(
+        live,
+        "hit_by_attack",
+        triggering_actor_id=outcome.roller_id,
+        only_owner_id=target.entity_id,
+        eligible=lambda reactor, pending: _pending_eligible(live, reactor, pending),
+        context=outcome,
+    )
+    if popped is None:
+        return outcome
+    before = {id(effect) for effect in live.active_effects.get(target.entity_id, [])}
+    start = len(live.event_log)
+    _resolve_readied_reaction(
+        live, target, popped, against=_find_combatant(live, outcome.roller_id)
+    )
+    live.reaction_event_spans.append((start, len(live.event_log)))
+    landed = [e for e in live.active_effects.get(target.entity_id, []) if id(e) not in before]
+    entry: dict[str, Any] = {}
+    _fold_active_effect_changes(landed, {}, entry, {})
+    bonus = roll_expr(entry["passive_ac_bonus"], live.rng) if entry.get("passive_ac_bonus") else 0
+    if bonus <= 0:
+        return outcome
+    raised[target.entity_id] = raised.get(target.entity_id, 0) + bonus
+    return raised_target(outcome, bonus)
 
 
 def _pending_reduction(pending: _PendingReaction) -> Any | None:
@@ -15693,10 +15737,6 @@ def _resolve_opportunity_attack(live: _LiveCombat, reactor: Combatant, mover: Co
         return
     targets = [mover]
     weapon = _mastered_weapon(reactor, _enchanted_weapon(live, reactor, attack.weapon))
-    # SRD Shield: "+5 bonus to AC, including against the triggering attack".
-    _drain_targeted_reactions(
-        live, trigger="hit_by_attack", triggering_actor_id=reactor.entity_id, targets=targets
-    )
     payload = _build_hydration_payload(live, caster=reactor)
     pre_event_count = len(live.event_log)
     kwargs = _pc_attack_context_kwargs(

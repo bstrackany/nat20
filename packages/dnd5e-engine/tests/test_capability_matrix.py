@@ -859,12 +859,12 @@ _PROBES: dict[str, tuple[Any, str]] = {
         ),
         "✅",
     ),
-    # C26b: a monster's save action leaves a readied Shield readied.
+    # C26b: a monster's save action leaves a readied Shield readied; Shield
+    # answers an attack roll as it hits.
     "Shield (incl. vs. Magic Missile)": (
         lambda: (
             "def _apply_magic_missile_shield_carveout(" in _src("orchestrator.py")
-            and "if any(isinstance(a, AttackActivity) for a in activities):"
-            in _src("orchestrator.py")
+            and "def _raise_ac_when_hit(" in _src("orchestrator.py")
         ),
         "✅",
     ),

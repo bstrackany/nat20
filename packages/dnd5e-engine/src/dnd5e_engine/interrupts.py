@@ -14,9 +14,10 @@ live one from what each creature keeps armed. The default interrupts nothing.
 It has two moments. ``before_damage_applied``: damage about to land on a
 creature, after it is rolled and before Resistance, Vulnerability and Immunity
 fold in (``activities/apply.py``). ``before_d20_outcome``: a D20 Test rolled and
-not yet decided (``activities/attack.py``, ``save_primitive.py``, ``check.py``),
-which a feature may change "after seeing the roll but before any of the roll's
-effects occur" (SRD 5.2 Dark One's Own Luck); see ``roll_modifiers.py``.
+not yet decided (``activities/attack.py``, ``save_primitive.py``, ``check.py``);
+an attack that would hit is where Shield answers, and a feature may change it
+"after seeing the roll but before any of the roll's effects occur" (SRD 5.2
+Dark One's Own Luck); see ``roll_modifiers.py``.
 
 The helpers below are the pure half of a damage reduction (which reduction an
 activity carries, whether it answers this damage, the reduced amounts); firing
@@ -26,7 +27,7 @@ one (spending the Reaction and the use) is the orchestrator's.
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Any
 
 from dnd5e_srd_data.schema.common import DamageReductionMode
@@ -87,6 +88,26 @@ class Interrupts:
     def before_d20_outcome(self, outcome: D20Outcome) -> D20Outcome:
         """The roll that stands instead of ``outcome``."""
         return outcome
+
+
+def raised_target(outcome: D20Outcome, by: int) -> D20Outcome:
+    """``outcome`` against a target ``by`` higher (Shield's "+5 bonus to AC,
+    including against the triggering attack"): the natural and total stand and
+    success is decided again by the same rule, so a natural 20 still hits.
+
+    :example: a total of 17 that hit AC 15 misses AC 20 after ``raised_target(outcome, 5)``.
+    """
+    rule = outcome.rule
+
+    def harder(natural: int, total: int) -> bool:
+        return rule(natural, total - by) if rule is not None else total >= outcome.target + by
+
+    return replace(
+        outcome,
+        target=outcome.target + by,
+        rule=harder,
+        succeeded=harder(outcome.natural, outcome.total),
+    )
 
 
 def reduction_activity(source: Any, activity_id: str | None) -> Any | None:

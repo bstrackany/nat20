@@ -239,7 +239,7 @@ def resolve_attack(
             is_crit, is_hit = _resolve_hit_outcome(
                 natural, total, effective_ac, activity, auto_crit_on_hit=auto_crit
             )
-        natural, total, is_crit, is_hit = _settle_d20(
+        natural, total, is_crit, is_hit, effective_ac = _settle_d20(
             ctx, activity, target.entity_id, roll, natural, total, effective_ac, auto_crit
         )
 
@@ -390,7 +390,7 @@ def _resolve_cleave_chain(
     is_crit, is_hit = _resolve_hit_outcome(
         roll.kept, total, effective_ac, activity, auto_crit_on_hit=auto_crit
     )
-    natural, total, is_crit, is_hit = _settle_d20(
+    natural, total, is_crit, is_hit, effective_ac = _settle_d20(
         ctx, activity, cid, roll, roll.kept, total, effective_ac, auto_crit
     )
     ctx.event_emitter(
@@ -946,8 +946,10 @@ def _settle_d20(
     total: int,
     effective_ac: int,
     auto_crit: bool,
-) -> tuple[int, int, bool, bool]:
-    """The attack roll that stands, as ``(natural, total, is_crit, is_hit)``.
+) -> tuple[int, int, bool, bool, int]:
+    """The attack roll that stands, as ``(natural, total, is_crit, is_hit, ac)``:
+    ``ac`` is the AC it stands against, raised when the target's Shield answered
+    the hit (``interrupts.raised_target``).
 
     SRD 5.2 Stroke of Luck: "If you fail a D20 Test, you can turn the roll into a
     20"; Cutting Words: "subtract the number rolled from the creature's roll ...
@@ -972,7 +974,7 @@ def _settle_d20(
     )
     after = ctx.interrupts.before_d20_outcome(before)
     crit = after.succeeded and rule(after.natural, after.total, crit=True)
-    return after.natural, after.total, crit, after.succeeded
+    return after.natural, after.total, crit, after.succeeded, after.target
 
 
 def _hits(
