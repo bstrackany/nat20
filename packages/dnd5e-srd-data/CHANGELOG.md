@@ -180,6 +180,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   bolts; the first `also_at_cast`), Vampiric Touch and Telekinesis
   (`later_use`, the last two `also_at_cast`).
 
+### Fixed
+
+- **An effect that depends on a condition carries it.** New
+  `PassiveEffect.while_status` (left out of a dump when unset) names the
+  condition the rest of an applied effect depends on, set by the translator's
+  `_EFFECT_WHILE_STATUS` table: Hypnotic Pattern's Hypnotized ("While Charmed,
+  the creature has the Incapacitated condition and a Speed of 0"). One
+  canonical file. The monster actions worded the same way (Harpy's Luring
+  Song, Chuul, Homunculus) carry no effect data to mark; Contagion's "While
+  Poisoned" effects carry no changes and are left as they are.
+
 ## [0.7.0]
 
 Lockstep release with `dnd5e-engine` 0.7.0 and `nat20-bridge` 0.7.0.

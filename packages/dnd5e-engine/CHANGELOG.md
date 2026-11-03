@@ -329,6 +329,13 @@ caster takes. Requires the matching `dnd5e-srd-data`.
 
 ### Fixed
 
+- **Hypnotic Pattern leaves a creature immune to Charmed alone.** The
+  Hypnotized effect lists Charmed and Incapacitated side by side, so a raging
+  Berserker (Mindless Rage: Immunity to Charmed) was still Incapacitated, which
+  ended its Rage. An effect whose data sets `PassiveEffect.while_status`
+  (`dnd5e-srd-data`, unreleased) now doesn't land on a target immune to that
+  condition (new `activities.effects.withheld_by_immunity`, asked by
+  `apply_activity_effects`).
 - **A feat taken at an earlier Ability Score Improvement meets a feat
   prerequisite.** `derive_sheet` checked a `feat:` token's prerequisite feats
   only against the build's features and origin feats, so Fey Pact at Fighter 4

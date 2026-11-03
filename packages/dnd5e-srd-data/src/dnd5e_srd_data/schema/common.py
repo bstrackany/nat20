@@ -1335,6 +1335,13 @@ class PassiveEffect(BaseModel):
     ``active_while`` makes an always-on effect (a feature's or feat's) count
     only while its bearer meets it (``ActiveWhile``: Mindless Rage "while your
     Rage is active"); left out of a dump when unset.
+
+    ``while_status`` names the condition the rest of an applied effect depends
+    on: SRD 5.2 Hypnotic Pattern "have the Charmed condition for the duration.
+    While Charmed, the creature has the Incapacitated condition and a Speed of
+    0." A target immune to that condition gets none of the effect (Mindless
+    Rage's Charmed immunity keeps the Incapacitated off too). Left out of a dump
+    when unset.
     """
 
     id: str = Field(alias="_id", default="")
@@ -1348,6 +1355,7 @@ class PassiveEffect(BaseModel):
     ends_on: list[EffectEndEvent] = Field(default_factory=list)
     until: EffectUntil = ""
     active_while: ActiveWhile | None = None
+    while_status: str = ""
 
     model_config = {"populate_by_name": True}
 
@@ -1360,6 +1368,8 @@ class PassiveEffect(BaseModel):
             data.pop("until", None)
         if data.get("active_while") is None:
             data.pop("active_while", None)
+        if not data.get("while_status"):
+            data.pop("while_status", None)
         return data
 
 

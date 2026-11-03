@@ -12,7 +12,12 @@ import pytest
 from pydantic import ValidationError
 
 from dnd5e_srd_data import ActiveWhile, BundledAssetLoader, PassiveEffect
-from tools.translators.foundry import _ACTIVE_WHILE, _apply_active_while
+from tools.translators.foundry import (
+    _ACTIVE_WHILE,
+    _EFFECT_WHILE_STATUS,
+    _apply_active_while,
+    _apply_while_status,
+)
 
 LOADER = BundledAssetLoader()
 CANONICAL = Path(__file__).resolve().parent.parent / "src" / "dnd5e_srd_data" / "canonical"
@@ -67,3 +72,41 @@ def test_the_table_reached_the_corpus(slug: str, sentence: str) -> None:
     rage = LOADER.get_feature("rage")
     assert rage is not None
     assert _apply_active_while("rage", list(rage.passive_effects)) == list(rage.passive_effects)
+
+
+# ── applied effects that hold only while a condition does (while_status) ─────
+
+
+def test_an_effect_without_a_while_status_dumps_as_before() -> None:
+    effect = PassiveEffect.model_validate({"_id": "x", "name": "Bless"})
+    assert effect.while_status == ""
+    assert "while_status" not in effect.model_dump(mode="json")
+    marked = PassiveEffect(_id="x", while_status="charmed")
+    assert marked.model_dump(mode="json")["while_status"] == "charmed"
+    assert PassiveEffect.model_validate(marked.model_dump(mode="json")) == marked
+
+
+@pytest.mark.parametrize(
+    ("slug", "sentence", "status"),
+    [
+        (
+            "hypnotic-pattern",
+            "While &amp;Reference[charmed apply=false], the creature has the "
+            "&amp;Reference[incapacitated apply=false] condition",
+            "charmed",
+        ),
+    ],
+)
+def test_the_while_status_table_reached_the_corpus(slug: str, sentence: str, status: str) -> None:
+    spell = LOADER.get_spell(slug)
+    assert spell is not None
+    ids = {k[1] for k, v in _EFFECT_WHILE_STATUS.items() if k[0] == slug and v == status}
+    marked = [e for e in spell.passive_effects if e.id in ids]
+    assert marked and all(status in e.statuses for e in marked)
+    assert all(sentence in e.description or sentence in spell.description for e in marked)
+    assert all(e.while_status == status for e in marked)
+    data = json.loads((CANONICAL / "spells" / f"{slug}.json").read_text(encoding="utf-8"))
+    assert {e["id"] for e in data["passive_effects"] if e.get("while_status") == status} == ids
+    bare = [e.model_copy(update={"while_status": ""}) for e in spell.passive_effects]
+    assert _apply_while_status(slug, bare) == list(spell.passive_effects)
+    assert sum(1 for path in CANONICAL.rglob("*.json") if '"while_status"' in path.read_text()) == 1

@@ -112,6 +112,16 @@ leaves the creature — `conditional_passives.in_force` drops the ones whose
 condition does not hold. An activity's trigger is not gated, and there is no
 condition for worn armor, a held item, position or lighting (`BACKLOG.md`).
 
+### Effects that depend on a condition
+
+An applied effect whose other statuses and changes hold only while its target
+has one condition names it in `PassiveEffect.while_status`. SRD 5.2 Hypnotic
+Pattern: "have the Charmed condition for the duration. While Charmed, the
+creature has the Incapacitated condition and a Speed of 0" ships `charmed`.
+A target immune to that condition
+(`is_condition_immune`: a raging Berserker's Mindless Rage) gets none of the
+effect, so it is not Incapacitated and keeps its Rage.
+
 ## Concentration anchors, enchantments and forms
 
 Every concentration spell concentrates. When a cast applies no concentration

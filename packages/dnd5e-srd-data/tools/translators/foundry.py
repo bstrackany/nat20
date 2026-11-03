@@ -2689,6 +2689,31 @@ def _apply_effect_endings(slug: str, effects: list[PassiveEffect]) -> list[Passi
     return out
 
 
+#: ``(spell slug, effect _id)`` → the condition the rest of the applied effect
+#: depends on (``PassiveEffect.while_status``): a target immune to it gets none
+#: of the effect. Foundry lists the dependent status beside it in ``statuses``.
+#: Contagion's "While Poisoned, the target has Disadvantage ..." is left off:
+#: its effects carry no changes, and the effect itself still lands on a target
+#: immune to Poisoned (the C27 Skeleton tests).
+_EFFECT_WHILE_STATUS: dict[tuple[str, str], str] = {
+    # "have the Charmed condition for the duration. While Charmed, the creature
+    # has the Incapacitated condition and a Speed of 0."
+    ("hypnotic-pattern", "mjAs8ssQlgp0AQOp"): "charmed",
+}
+
+
+def _apply_while_status(slug: str, effects: list[PassiveEffect]) -> list[PassiveEffect]:
+    """Set each effect's ``while_status`` from ``_EFFECT_WHILE_STATUS``.
+    Copy-on-write like ``_apply_effect_endings``."""
+    out: list[PassiveEffect] = []
+    for effect in effects:
+        status = _EFFECT_WHILE_STATUS.get((slug, effect.id))
+        if status:
+            effect = effect.model_copy(update={"while_status": status})
+        out.append(effect)
+    return out
+
+
 #: ``(feature slug, effect _id)`` → what must hold of the bearer for the
 #: always-on effect to count (``PassiveEffect.active_while``). Foundry ships
 #: these effects disabled for the player to toggle (Mindless Rage) or always on
@@ -3118,10 +3143,13 @@ def translate_spell_yaml(
         ),
         passive_effects=_append_added_save_effects(
             slug,
-            _apply_effect_endings(
+            _apply_while_status(
                 slug,
-                _apply_effect_status_corrections(
-                    slug, _apply_effect_change_corrections(slug, _passive_effects(doc))
+                _apply_effect_endings(
+                    slug,
+                    _apply_effect_status_corrections(
+                        slug, _apply_effect_change_corrections(slug, _passive_effects(doc))
+                    ),
                 ),
             ),
         ),

@@ -94,6 +94,18 @@ def is_condition_immune(target: Combatant, condition: str, *, imposed: Iterable[
     return condition in granted_condition_immunities([*held, *landing])
 
 
+def withheld_by_immunity(effect: PassiveEffect, target: Combatant) -> bool:
+    """Whether ``target`` is immune to the condition the rest of ``effect``
+    depends on (``PassiveEffect.while_status``), so none of it lands. SRD 5.2
+    Hypnotic Pattern: "have the Charmed condition for the duration. While
+    Charmed, the creature has the Incapacitated condition and a Speed of 0." A
+    raging Berserker (Mindless Rage: Immunity to Charmed) is neither Charmed
+    nor Incapacitated, and its Rage goes on."""
+    return bool(effect.while_status) and is_condition_immune(
+        target, effect.while_status, imposed=effect.statuses
+    )
+
+
 def _name_slug(name: str) -> str:
     return name.lower().replace(" ", "_")
 
@@ -258,6 +270,8 @@ def apply_activity_effects(
         # only on a FAILED save. Non-save activities (save_succeeded is None)
         # apply unconditionally.
         if save_succeeded is True and not ref.on_save:
+            continue
+        if withheld_by_immunity(pe, target):
             continue
 
         ae = passive_effect_to_active_effect(

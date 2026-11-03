@@ -174,7 +174,8 @@
         "charmed",
         "incapacitated"
       ],
-      "transfer": false
+      "transfer": false,
+      "while_status": "charmed"
     }
   ],
   "preparation": {

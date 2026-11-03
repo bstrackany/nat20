@@ -25,10 +25,11 @@ from dnd5e_engine.orchestrator import (
     _end_rage,
     _update_combatant,
 )
+from dnd5e_engine.spatial import cell_id
 from dnd5e_engine.types.conditions import ActiveCondition
 from dnd5e_engine.types.effects import ActiveEffect
 from tests.c20_support import act, combatant, pc, start
-from tests.fork_support import BUNDLED, WithAssets, homebrew_feat
+from tests.fork_support import BUNDLED, WithAssets, cast, caster, homebrew_feat
 
 HERO = "char:hero"
 
@@ -92,6 +93,26 @@ def test_mindless_rage_immunity_lasts_while_the_rage_does():
     assert combatant(live).condition_immunities == ["charmed", "frightened"]
     _end_rage(live, HERO, "incapacitated")
     assert combatant(live).condition_immunities == []
+
+
+@pytest.mark.parametrize(
+    ("rages", "conditions"), [(True, []), (False, ["charmed", "incapacitated"])]
+)
+def test_hypnotic_pattern_leaves_a_raging_berserker_alone(rages: bool, conditions: list[str]):
+    # SRD 5.2 Hypnotic Pattern: "have the Charmed condition for the duration.
+    # While Charmed, the creature has the Incapacitated condition and a Speed of
+    # 0." Immune to Charmed while raging, the Berserker isn't Incapacitated
+    # either, so the Rage goes on. WIS 1 against DC 16: the save always fails.
+    berserker = pc(class_slug="barbarian", subclass_slug="berserker", character_level=6, wisdom=1)
+    ally = caster(["hypnotic-pattern"], {3: 1}, zone_id=cell_id(9, 9), initiative=15)
+    handle, live = start([berserker, ally.model_copy(update={"intelligence": 20})], seed=13)
+    if rages:
+        act(handle, HERO, intent_type="use_feature", feature_id="rage")
+    act(handle, HERO, intent_type="pass")
+    cast(handle, "hypnotic-pattern", slot_level=3, target_zone_id=cell_id(6, 6), direction=(-1, -1))
+    hero = combatant(live)
+    assert sorted({c.condition for c in hero.conditions}) == conditions
+    assert hero.condition_immunities == (["charmed", "frightened"] if rages else [])
 
 
 @pytest.mark.parametrize(("condition", "advantage"), [(None, ["DEX"]), ("stunned", [])])
