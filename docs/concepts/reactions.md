@@ -69,6 +69,40 @@ Shield in round 1. The order is the priority: when two armed reactions answer
 one trigger, the first listed (or first armed) fires and the other waits for
 the next occurrence; that order survives the turn-start re-arming.
 
+## Reactions that reduce damage
+
+A reaction whose activity carries `damage_reduction` (`dnd5e-srd-data`) does
+not fire with the others: it waits for the damage it answers and changes it
+before it lands. SRD 5.2 Uncanny Dodge: "When an attacker that you can see hits
+you with an attack roll, you can take a Reaction to halve the attack's damage
+against you (round down)." An armed Uncanny Dodge does nothing on a miss; on a
+hit, the damage is rolled, halved, and only then folded through Resistance,
+Vulnerability and Immunity, so the `DamageApplied` the host sees is the reduced
+amount, preceded by `ReactionTriggered`.
+
+| `mode` | Reduces by | SRD 5.2 |
+|---|---|---|
+| `"halve"` | half the damage, round down | Uncanny Dodge |
+| `"roll"` | the activity's own `healing` roll (where Foundry writes a reduction) | Deflect Attacks, Deflect Energy, Stone's Endurance |
+| `"to_zero"` | all of it | (a consumer's own content) |
+
+The activity's `reaction_conditions` say which damage: `hit_by_attack` answers
+the damage of an attack roll that hit, `takes_damage` any damage.
+`attacker_seen` requires the reactor to see the attacker; `damage_types`
+requires the damage to include one of them (Deflect Attacks' Bludgeoning,
+Piercing or Slashing). The reduction spends the Reaction and the feature's use
+(or the spell's slot) only when it fires, follows the same arming order as every
+other armed reaction, and comes off the attack's damage as a whole, from the
+weapon's own damage type first. A `"roll"` reduction draws its dice from the
+combat's seeded RNG at that moment, after the damage it reduces was rolled.
+
+Only the reduction resolves: a reaction's other activities (Deflect Attacks'
+Redirect) do not. A reduction protects its owner only, not another creature.
+
+The engine asks this through `ActivityResolutionContext.interrupts`
+(`dnd5e_engine.interrupts.Interrupts`), one object an activity resolution
+consults before an outcome stands. Its default interrupts nothing.
+
 ## Recognized triggers
 
 `PlayerIntent.reaction_trigger` accepts a closed set:

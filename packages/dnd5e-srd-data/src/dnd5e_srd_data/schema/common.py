@@ -34,6 +34,7 @@ from pydantic import (
     SerializerFunctionWrapHandler,
     field_serializer,
     model_serializer,
+    model_validator,
 )
 
 # ---------------------------------------------------------------------------
@@ -262,6 +263,64 @@ class ActivityTrigger(BaseModel, frozen=True):
     def _without_unset_narrowing(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
         data: dict[str, Any] = handler(self)
         for key in ("spell", "with_slot", "within_ft"):
+            if not data.get(key):
+                data.pop(key, None)
+        return data
+
+
+#: The SRD 5.2 damage types, by name.
+DamageTypeName = Literal[
+    "acid",
+    "bludgeoning",
+    "cold",
+    "fire",
+    "force",
+    "lightning",
+    "necrotic",
+    "piercing",
+    "poison",
+    "psychic",
+    "radiant",
+    "slashing",
+    "thunder",
+]
+
+
+class DamageReductionMode(StrEnum):
+    """How a reaction reduces the damage it answers."""
+
+    # Uncanny Dodge — "halve the attack's damage against you (round down)"
+    HALVE = "halve"
+    # Deflect Attacks — "reduce the attack's total damage against you. The
+    # reduction equals 1d10 plus your Dexterity modifier and Monk level";
+    # Stone's Endurance — "roll 1d12. Add your Constitution modifier to the
+    # number rolled and reduce the damage by that total". The amount is the
+    # activity's own ``healing`` roll, where Foundry writes a reduction.
+    ROLL = "roll"
+    # A homebrew "reduce the attack's total damage against you to 0"
+    TO_ZERO = "to_zero"
+
+
+class DamageReduction(BaseModel, frozen=True):
+    """A reaction that reduces the damage it answers, before that damage lands.
+
+    The activity's ``activation.reaction_conditions`` say which damage: an
+    attack that hits (``hit_by_attack``) or any damage (``takes_damage``).
+    ``attacker_seen`` requires the reactor to see the attacker (Uncanny Dodge:
+    "When an attacker that you can see hits you"); ``damage_types`` requires the
+    damage to include one of them (Deflect Attacks: "its damage includes
+    Bludgeoning, Piercing, or Slashing damage"). Both are left out of a dump
+    when unset.
+    """
+
+    mode: DamageReductionMode
+    attacker_seen: bool = False
+    damage_types: list[DamageTypeName] = Field(default_factory=list)
+
+    @model_serializer(mode="wrap")
+    def _without_unset_narrowing(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        data: dict[str, Any] = handler(self)
+        for key in ("attacker_seen", "damage_types"):
             if not data.get(key):
                 data.pop(key, None)
         return data
@@ -734,6 +793,10 @@ class _ActivityBase(BaseModel):
     #: translator's per-entry table and a consumer's own data set it. Left out
     #: of a dump when ``None`` so the corpus files only change where it is set.
     trigger: ActivityTrigger | None = None
+    #: A reaction that reduces the damage it answers (``DamageReduction``).
+    #: ``None`` (Foundry has no field for it) everywhere else; left out of a
+    #: dump when ``None``.
+    damage_reduction: DamageReduction | None = None
 
     model_config = {"populate_by_name": True}
 
@@ -742,7 +805,19 @@ class _ActivityBase(BaseModel):
         data: dict[str, Any] = handler(self)
         if data.get("trigger") is None:
             data.pop("trigger", None)
+        if data.get("damage_reduction") is None:
+            data.pop("damage_reduction", None)
         return data
+
+    @model_validator(mode="after")
+    def _reduction_roll_has_a_roll(self) -> _ActivityBase:
+        """A ``roll`` reduction reduces by the activity's own ``healing`` roll,
+        so only a heal activity can carry one."""
+        reduction = self.damage_reduction
+        rolls = reduction is not None and reduction.mode is DamageReductionMode.ROLL
+        if rolls and getattr(self, "healing", None) is None:
+            raise ValueError("damage_reduction mode 'roll' needs a heal activity's healing")
+        return self
 
 
 class _ActivityBaseWithEffects(_ActivityBase):

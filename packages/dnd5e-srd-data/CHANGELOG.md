@@ -9,6 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`Activity.damage_reduction`** (`DamageReduction`: `mode` `halve` / `roll` /
+  `to_zero`, `attacker_seen`, `damage_types`) — a reaction that reduces the
+  damage it answers before it lands. `roll` is the activity's own `healing` roll
+  (Foundry's way of writing a reduction), so only a heal activity may carry it.
+  Left out of a dump when unset (and `attacker_seen` / `damage_types` when
+  unset). The translator sets it from `_DAMAGE_REDUCTIONS` on four SRD 5.2
+  features: Uncanny Dodge (`halve`, "an attacker that you can see"), Deflect
+  Attacks (`roll`, Bludgeoning / Piercing / Slashing), Deflect Energy and
+  Stone's Endurance (`roll`). New exports `DamageReduction`,
+  `DamageReductionMode`, `DamageTypeName`.
+- **"hits you with an attack roll" and "an attack roll hits you"** are typed
+  `hit_by_attack` reaction conditions, so Uncanny Dodge, Deflect Attacks and
+  Deflect Energy can be armed. Canonical: those three features and Stone's
+  Endurance changed.
+
 - **Four more `ActivityTriggerKind`s and three narrowings.** `natural_1` (a
   D20 Test's d20 shows 1), `casts_spell` (Blessed Healer: "Immediately after
   you cast a spell with a spell slot"), `reduces_to_zero` and `enemy_falls`

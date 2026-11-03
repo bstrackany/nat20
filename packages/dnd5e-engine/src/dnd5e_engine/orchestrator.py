@@ -66,6 +66,7 @@ from dnd5e_srd_data.schema.common import (
     CastActivity,
     DamageActivity,
     DamagePartBlock,
+    DamageReductionMode,
     EnchantActivity,
     HealActivity,
     SaveActivity,
@@ -195,6 +196,14 @@ from dnd5e_engine.events import (
     TurnPhase,
     TurnStarted,
     Unconscious,
+)
+from dnd5e_engine.interrupts import (
+    IncomingDamage,
+    Interrupts,
+    reduce_damage,
+    reduction_activity,
+    reduction_answers,
+    reduction_roll,
 )
 from dnd5e_engine.lib_loader import get_lib_loader
 from dnd5e_engine.outcome import (
@@ -2895,6 +2904,7 @@ def _resolve_monster_cast(
         current,
         target_list,
         rng=live.rng,
+        interrupts=_ArmedInterrupts(live),
         event_emitter=lambda ev: _emit(live, ev),
         slot_level=slot_level,
         base_spell_level=spell.level,
@@ -3078,6 +3088,7 @@ def _resolve_monster_attack_activities(
         actor,
         target_list,
         rng=live.rng,
+        interrupts=_ArmedInterrupts(live),
         event_emitter=lambda ev: _emit(live, ev),
         slot_level=None,
         base_spell_level=None,
@@ -10218,6 +10229,7 @@ def _resolve_construct_attack(
         owner,
         target_list,
         rng=live.rng,
+        interrupts=_ArmedInterrupts(live),
         event_emitter=lambda ev: _emit(live, ev),
         slot_level=construct.slot_level,
         base_spell_level=spec.base_level,
@@ -11944,6 +11956,7 @@ def _fire_triggered_activity(
         owner,
         [target],
         rng=live.rng,
+        interrupts=_ArmedInterrupts(live),
         event_emitter=lambda ev: _emit(live, ev),
         slot_level=use.slot_level,
         base_spell_level=use.base_level,
@@ -13044,6 +13057,7 @@ def _resolve_readied_feature(
         reactor,
         targets,
         rng=live.rng,
+        interrupts=_ArmedInterrupts(live),
         event_emitter=lambda ev: _emit(live, ev),
         slot_level=None,
         base_spell_level=None,
@@ -13139,6 +13153,7 @@ def _resolve_readied_spell_cast(
         reactor,
         targets,
         rng=live.rng,
+        interrupts=_ArmedInterrupts(live),
         event_emitter=lambda ev: _emit(live, ev),
         slot_level=slot_level,
         base_spell_level=spell.level,
@@ -13205,7 +13220,10 @@ def _resolve_readied_spell_cast(
 def _pending_eligible(live: _LiveCombat, reactor: Combatant, pending: _PendingReaction) -> bool:
     """Can this armed reaction fire now? A spell needs its slot or slotless cast
     (``_readied_cast_eligible``); a feature or feat needs the reactor to have it
-    with a use left (``_reaction_invocation``)."""
+    with a use left (``_reaction_invocation``). A reduction fires only as the
+    damage it reduces lands (``_reduce_with_armed_reaction``), never here."""
+    if _pending_reduction(pending) is not None:
+        return False
     if pending.feature_id:
         return _reaction_invocation(live, reactor, pending) is not None
     return _readied_cast_eligible(live, reactor, pending)
@@ -13256,6 +13274,132 @@ def _drain_targeted_reactions(
         )
         fired.add(target.entity_id)
     return fired
+
+
+class _ArmedInterrupts(Interrupts):
+    """The engine's ``Interrupts``: what the creatures in this combat keep
+    armed answers a resolution midway. Built per activity context."""
+
+    def __init__(self, live: _LiveCombat) -> None:
+        self._live = live
+
+    def before_damage_applied(self, incoming: IncomingDamage) -> dict[str, int]:
+        return _reduce_with_armed_reaction(self._live, incoming)
+
+
+def _pending_reduction(pending: _PendingReaction) -> Any | None:
+    """The damage-reducing activity of an armed reaction's spell, feature or
+    feat (``interrupts.reduction_activity``), or ``None``."""
+    loader = get_lib_loader()
+    source: Any = (
+        loader.get_feature(pending.feature_id) or loader.get_feat(pending.feature_id)
+        if pending.feature_id
+        else loader.get_spell(pending.spell_id or "")
+    )
+    return reduction_activity(source, pending.activity_id)
+
+
+def _reduce_with_armed_reaction(live: _LiveCombat, incoming: IncomingDamage) -> dict[str, int]:
+    """SRD 5.2 Uncanny Dodge: "When an attacker that you can see hits you with
+    an attack roll, you can take a Reaction to halve the attack's damage
+    against you (round down)." The damaged creature's armed reduction answers
+    damage before it lands: on an attack that hit, one armed on
+    ``hit_by_attack`` and then one on ``takes_damage`` (Stone's Endurance:
+    "When you take damage"); on any other damage, only the latter. The first
+    armed answering the trigger fires, as for every armed reaction
+    (``_pop_pending_reaction``: alive, not Incapacitated, Reaction available);
+    it also needs a use or slot left, the attacker in sight when its text says
+    so, and a damage type it answers. Returns the amounts that land."""
+    by_type = dict(incoming.by_type)
+    attacker = _find_combatant(live, incoming.attacker_id)
+    triggers: tuple[ReactionTrigger, ...] = (
+        ("hit_by_attack", "takes_damage") if incoming.attack_hit else ("takes_damage",)
+    )
+
+    def _answers(reactor: Combatant, pending: _PendingReaction) -> bool:
+        activity = _pending_reduction(pending)
+        if activity is None:
+            return False
+        sees = attacker is not None and _combatant_can_see(live, reactor, attacker)
+        if not reduction_answers(activity.damage_reduction, by_type, sees_attacker=sees):
+            return False
+        if pending.feature_id:
+            named = replace(pending, activity_id=activity.id)
+            return _reaction_invocation(live, reactor, named) is not None
+        return _readied_cast_eligible(live, reactor, pending)
+
+    for trigger in triggers:
+        popped = _pop_pending_reaction(
+            live,
+            trigger,
+            triggering_actor_id=incoming.attacker_id,
+            only_owner_id=incoming.target_id,
+            eligible=_answers,
+        )
+        reactor = _find_combatant(live, popped.owner_id) if popped is not None else None
+        if popped is not None and reactor is not None:
+            return _fire_reduction(live, reactor, popped, by_type)
+    return by_type
+
+
+def _fire_reduction(
+    live: _LiveCombat, reactor: Combatant, popped: _PendingReaction, by_type: dict[str, int]
+) -> dict[str, int]:
+    """Fire an armed reduction: spend the Reaction and the feature's use (or
+    pay for the spell), emit ``ReactionTriggered`` (and ``SpellCast``), and
+    return ``by_type`` reduced. A ``roll`` reduction draws its dice from the
+    combat's RNG here, after the damage it reduces was rolled and before that
+    damage lands; ``halve`` and ``to_zero`` draw nothing. Only the reduction
+    resolves: the reaction's other activities (Deflect Attacks' Redirect) do
+    not."""
+    activity: Any = _pending_reduction(popped)
+    reduction = activity.damage_reduction
+    _update_combatant(live, reactor.entity_id, reaction_available=False)
+    slot_level: int | None = None
+    base_level: int | None = None
+    ability: str | None = None
+    spell = None if popped.feature_id else get_lib_loader().get_spell(popped.spell_id or "")
+    if spell is None:
+        named = replace(popped, activity_id=activity.id)
+        invocation = _reaction_invocation(live, reactor, named)
+        _record_capped_feature_use(live, reactor.entity_id, popped.feature_id, invocation)
+    else:
+        slot_level = popped.slot_level if popped.slot_level is not None else spell.level
+        base_level = spell.level
+        ability = _spellcasting_ability_for(reactor, spell.slug)
+        if spell.level > 0:
+            _pay_for_cast(live, reactor, spell, slot_level)
+    _emit(
+        live,
+        ReactionTriggered(
+            actor_id=reactor.entity_id,
+            reaction_name=popped.feature_id or popped.spell_id or "",
+            trigger_event_uuid="",
+        ),
+    )
+    if spell is not None:
+        _emit_spell_cast(live, reactor.entity_id, spell, slot_level)
+    rolled = 0
+    if reduction.mode is DamageReductionMode.ROLL:
+        actx = build_activity_context(
+            reactor,
+            [reactor],
+            rng=live.rng,
+            event_emitter=lambda ev: _emit(live, ev),
+            slot_level=slot_level,
+            base_spell_level=base_level,
+            spellcasting_ability=ability,
+            concentration=False,
+            source_passive_effects=[],
+            spell_book={},
+            passive_damage_modifiers={},
+            save_modifiers={},
+            scale_values=_scale_values_of(reactor),
+            class_levels=_class_levels(reactor),
+            is_feature_invocation=spell is None,
+        )
+        rolled = reduction_roll(activity, actx)
+    return reduce_damage(by_type, reduction.mode, rolled)
 
 
 def _drain_counterspell_reaction(
@@ -13344,6 +13488,7 @@ def _drain_counterspell_reaction(
         reactor,
         [current],
         rng=live.rng,
+        interrupts=_ArmedInterrupts(live),
         event_emitter=lambda ev: _emit(live, ev),
         slot_level=cs_level,
         base_spell_level=counterspell.level,
@@ -13965,6 +14110,7 @@ async def submit_player_intent(
             current,
             targets,
             rng=live.rng,
+            interrupts=_ArmedInterrupts(live),
             event_emitter=lambda ev: _emit(live, ev),
             slot_level=intent.slot_level,
             base_spell_level=cast_spell.level if cast_spell is not None else None,
@@ -14401,6 +14547,7 @@ def _resolve_opportunity_attack(live: _LiveCombat, reactor: Combatant, mover: Co
         reactor,
         targets,
         rng=live.rng,
+        interrupts=_ArmedInterrupts(live),
         event_emitter=lambda ev: _emit(live, ev),
         slot_level=None,
         base_spell_level=None,

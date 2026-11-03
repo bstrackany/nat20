@@ -4,7 +4,14 @@
       "activation": {
         "condition": "When an attacker that you can see hits you with an attack roll",
         "override": false,
-        "reaction_conditions": [],
+        "reaction_conditions": [
+          {
+            "condition_text": "When an attacker that you can see hits you with an attack roll",
+            "kind": "hit_by_attack",
+            "max_range_ft": null,
+            "target_spell_slug": null
+          }
+        ],
         "type": "reaction",
         "value": null
       },
@@ -16,6 +23,10 @@
         },
         "spell_slot": true,
         "targets": []
+      },
+      "damage_reduction": {
+        "attacker_seen": true,
+        "mode": "halve"
       },
       "description": {
         "chat_flavor": ""

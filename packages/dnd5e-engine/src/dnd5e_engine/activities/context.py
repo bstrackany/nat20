@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from dnd5e_engine.events import CombatEvent
+from dnd5e_engine.interrupts import Interrupts
 from dnd5e_engine.types.combat import Combatant
 
 if TYPE_CHECKING:
@@ -586,6 +587,10 @@ class ActivityResolutionContext:
     # only for the resolution an opportunity attack runs; ``attack.py`` stamps
     # it on every ``AttackRolled`` that resolution emits.
     is_opportunity_attack: bool = False
+    # What a resolution asks before an outcome stands (``interrupts.py``): an
+    # armed reaction that reduces damage (Uncanny Dodge, Deflect Attacks). The
+    # default interrupts nothing; the orchestrator passes its live one.
+    interrupts: Interrupts = field(default_factory=Interrupts)
 
     def ability_mod(self, ability: str) -> int:
         return (self.caster_abilities.get(ability, 10) - 10) // 2

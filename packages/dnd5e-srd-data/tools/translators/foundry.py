@@ -38,6 +38,8 @@ from dnd5e_srd_data import (
     DamageActivity,
     DamagePart,
     DamagePartBlock,
+    DamageReduction,
+    DamageReductionMode,
     EffectEndEvent,
     EnchantActivity,
     Feat,
@@ -320,7 +322,18 @@ _TARGETED_BY_SPELL = re.compile(r"targeted by the (?P<spell>[A-Za-z' ]+?) spell"
 #: ``ReactionTriggerKind``). Entries are emitted in table order; a phrase that
 #: matches nothing yields ``[]`` (catch-all — the prose is still shipped).
 _REACTION_TRIGGER_PATTERNS: tuple[tuple[re.Pattern[str], ReactionTriggerKind], ...] = (
-    (re.compile(r"\bhit by an attack roll\b", re.IGNORECASE), ReactionTriggerKind.HIT_BY_ATTACK),
+    (
+        # Shield: "hit by an attack roll"; Uncanny Dodge: "an attacker that you
+        # can see hits you with an attack roll"; Deflect Attacks: "an attack
+        # roll hits you"
+        re.compile(
+            r"\bhit by an attack roll\b"
+            r"|\bhits you with an attack roll\b"
+            r"|\ban attack roll hits you\b",
+            re.IGNORECASE,
+        ),
+        ReactionTriggerKind.HIT_BY_ATTACK,
+    ),
     (_TARGETED_BY_SPELL, ReactionTriggerKind.TARGETED_BY_SPELL),
     (re.compile(r"\bcasting a spell\b", re.IGNORECASE), ReactionTriggerKind.SEES_SPELL_CAST),
     (re.compile(r"\btak(?:ing|es?) damage\b", re.IGNORECASE), ReactionTriggerKind.TAKES_DAMAGE),
@@ -2460,6 +2473,45 @@ def _apply_effect_endings(slug: str, effects: list[PassiveEffect]) -> list[Passi
     return out
 
 
+#: ``(feature slug, activity _id)`` → the damage the reaction reduces before it
+#: lands (``Activity.damage_reduction``). Foundry writes these reductions as a
+#: heal after the fact (Deflect Attacks' Reduce, Stone's Endurance) or leaves
+#: them to the player (Uncanny Dodge), so the SRD 5.2 sentence is the source.
+_DAMAGE_REDUCTIONS: dict[tuple[str, str], DamageReduction] = {
+    # "When an attacker that you can see hits you with an attack roll, you can
+    # take a Reaction to halve the attack's damage against you (round down)."
+    ("uncanny-dodge", "7krJIcGhZl9RqzYl"): DamageReduction(
+        mode=DamageReductionMode.HALVE, attacker_seen=True
+    ),
+    # "When an attack roll hits you and its damage includes Bludgeoning,
+    # Piercing, or Slashing damage, you can take a Reaction to reduce the
+    # attack's total damage against you. The reduction equals 1d10 plus your
+    # Dexterity modifier and Monk level."
+    ("deflect-attacks", "rQwRKkuZ7WhnB7v7"): DamageReduction(
+        mode=DamageReductionMode.ROLL, damage_types=["bludgeoning", "piercing", "slashing"]
+    ),
+    # "You can now use your Deflect Attacks feature against attacks that deal
+    # any damage type, not just Bludgeoning, Piercing, or Slashing."
+    ("deflect-energy", "F7NbTRmkUTDDZxj7"): DamageReduction(mode=DamageReductionMode.ROLL),
+    # "When you take damage, you can take a Reaction to roll 1d12. Add your
+    # Constitution modifier to the number rolled and reduce the damage by that
+    # total."
+    ("stones-endurance", "vrWhAQ6Bj4gznxHq"): DamageReduction(mode=DamageReductionMode.ROLL),
+}
+
+
+def _apply_damage_reductions(slug: str, activities: list[Activity]) -> list[Activity]:
+    """Set each activity's ``damage_reduction`` from ``_DAMAGE_REDUCTIONS``.
+    Copy-on-write like ``_apply_activity_triggers``."""
+    out: list[Activity] = []
+    for act in activities:
+        reduction = _DAMAGE_REDUCTIONS.get((slug, act.id))
+        if reduction is not None:
+            act = act.model_copy(update={"damage_reduction": reduction})
+        out.append(act)
+    return out
+
+
 def _apply_activity_triggers(slug: str, activities: list[Activity]) -> list[Activity]:
     """Set each activity's ``trigger`` from ``_ACTIVITY_TRIGGERS``. Copy-on-write
     like ``_apply_spell_damage_type_corrections``."""
@@ -3276,14 +3328,15 @@ def translate_feature_yaml(
     doc = _load_yaml(yaml_path)
     system = doc.get("system") or {}
     feature_type, source_slug = _feature_type_and_source(yaml_path)
+    slug = _feature_slug(doc, yaml_path)
     return Feature(
-        slug=_feature_slug(doc, yaml_path),
+        slug=slug,
         name=_name(doc),
         description=_description(doc),
         feature_type=feature_type,
         foundry_id=str(doc.get("_id") or ""),
         source_slug=source_slug,
-        activities=_translate_activities(system),
+        activities=_apply_damage_reductions(slug, _translate_activities(system)),
         passive_effects=_passive_effects(doc),
         advancement=_advancement(system),
         uses=_feature_uses(system),

@@ -34,6 +34,9 @@
           }
         ]
       },
+      "damage_reduction": {
+        "mode": "roll"
+      },
       "description": {
         "chat_flavor": ""
       },

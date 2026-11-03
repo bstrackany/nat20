@@ -1147,6 +1147,7 @@ def _apply_on_hit_damage(
             magical=(weapon is not None and weapon.magical) or ctx.base_spell_level is not None,
             source_id=_damage_source_id(activity, weapon, source_id_override),
             is_crit=is_crit,
+            attack_hit=True,
         )
     finally:
         if is_crit:

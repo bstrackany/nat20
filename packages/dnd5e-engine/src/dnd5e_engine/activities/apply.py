@@ -35,6 +35,7 @@ from dnd5e_srd_data.schema.monster import MonsterTraitMechanic
 from dnd5e_engine.activities.actor_stats import save_modifier
 from dnd5e_engine.activities.d20 import AdvantageSources, roll_d20_test
 from dnd5e_engine.events import DamageApplied, DamageType, SaveRolled
+from dnd5e_engine.interrupts import IncomingDamage
 
 if TYPE_CHECKING:
     from dnd5e_engine.activities.context import ActivityResolutionContext
@@ -90,6 +91,7 @@ def apply_damage(
     magical: bool = False,
     source_id: str | None = None,
     is_crit: bool = False,
+    attack_hit: bool = False,
 ) -> int:
     """Apply a per-damage-type rolled amount to ``target`` and emit one
     ``DamageApplied`` per valid type.
@@ -117,7 +119,15 @@ def apply_damage(
     creature" needs the AFTER-immunity total (a damage-immune target dealt 0
     final damage must not proc the rider), not the pre-modifier rolled sum.
     Existing callers that ignore the return are unaffected.
+
+    ``attack_hit`` — the damage of an attack roll that hit. Before any of it
+    lands, ``ctx.interrupts`` may reduce it (an armed Uncanny Dodge, Deflect
+    Attacks or Stone's Endurance; ``interrupts.py``); the reduced amounts are
+    what Resistance, Vulnerability and Immunity then fold.
     """
+    rolled_by_type = ctx.interrupts.before_damage_applied(
+        IncomingDamage(target.entity_id, ctx.caster.entity_id, rolled_by_type, attack_hit)
+    )
     sidecar = ctx.passive_damage_modifiers.get(target.entity_id, {})
     resistances = _effective_resistances(target, sidecar, magical=magical)
     immunities = set(target.damage_immunities) | set(sidecar.get("immunities", ()))

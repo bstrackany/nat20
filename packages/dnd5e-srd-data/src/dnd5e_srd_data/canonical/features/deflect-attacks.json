@@ -4,7 +4,14 @@
       "activation": {
         "condition": "When an attack roll hits you and its damage includes Bludgeoning, Piercing, or Slashing damage",
         "override": false,
-        "reaction_conditions": [],
+        "reaction_conditions": [
+          {
+            "condition_text": "When an attack roll hits you and its damage includes Bludgeoning, Piercing, or Slashing damage",
+            "kind": "hit_by_attack",
+            "max_range_ft": null,
+            "target_spell_slug": null
+          }
+        ],
         "type": "reaction",
         "value": null
       },
@@ -16,6 +23,14 @@
         },
         "spell_slot": true,
         "targets": []
+      },
+      "damage_reduction": {
+        "damage_types": [
+          "bludgeoning",
+          "piercing",
+          "slashing"
+        ],
+        "mode": "roll"
       },
       "description": {
         "chat_flavor": ""

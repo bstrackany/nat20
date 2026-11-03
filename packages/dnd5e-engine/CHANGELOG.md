@@ -16,6 +16,29 @@ caster takes. Requires the matching `dnd5e-srd-data`.
 
 ### Added
 
+- **Reactions that reduce damage.** An armed reaction whose activity carries
+  `damage_reduction` (`dnd5e-srd-data`, unreleased) fires as the damage it
+  answers lands, not before the attack: SRD 5.2 Uncanny Dodge halves an attack
+  that hit ("When an attacker that you can see hits you with an attack roll …
+  halve the attack's damage against you (round down)"), Deflect Attacks and
+  Deflect Energy take off their 1d10 + Dexterity modifier + Monk level, Stone's
+  Endurance its 1d12 + Constitution modifier from any damage, and a consumer's
+  `to_zero` all of it. The reduction applies to the rolled damage before
+  Resistance, Vulnerability and Immunity; it spends the Reaction and the use (or
+  the spell's slot, with `SpellCast`) only when it fires, emits
+  `ReactionTriggered` before the reduced `DamageApplied`, and keeps the arming
+  order. A `roll` reduction draws its dice at that moment, after the damage dice
+  it reduces; `halve` and `to_zero` draw nothing, so a combat with no armed
+  reduction keeps its seed stream. New module `interrupts.py`: `Interrupts`, the
+  one object an activity resolution asks before an outcome stands
+  (`ActivityResolutionContext.interrupts`, `build_activity_context(interrupts=)`;
+  default: nothing), with `before_damage_applied`; `apply_damage` calls it first
+  (`attack_hit=True` from an attack's hit). The orchestrator passes
+  `_ArmedInterrupts` at each context it builds; an armed reduction never fires
+  through the before-the-attack or after-the-damage queues
+  (`_pending_eligible`). Only the reduction resolves (not Deflect Attacks'
+  Redirect), and only for its owner. Stone's Endurance, armed, used to heal
+  after the damage; it now reduces it.
 - **More moments a held activity fires on.** An activity whose
   `Activity.trigger.kind` (`dnd5e-srd-data`, unreleased) is `natural_1` fires
   when its subject's D20 Test shows a 1; `casts_spell` when the subject casts a
