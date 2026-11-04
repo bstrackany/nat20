@@ -16,6 +16,14 @@ caster takes. Requires the matching `dnd5e-srd-data`.
 
 ### Added
 
+- **`RoutePlanner`: which route a creature walks, as one replaceable object.**
+  New module `route_planner`, installed with `set_route_planner` (both
+  exported). `route(live, mover, engine_route, *, purpose, start, goal, avoid,
+  budget_ft, provokes)` is asked with the engine's own route for a `move`
+  intent, a monster's closing walk when the `MonsterAI` plans no move, and a
+  monster's flee; the engine prices and walks what it returns. `provokes(a, b)`
+  says whether a step would draw an opportunity attack now. The default returns
+  the engine's route: behaviour is unchanged. No RNG.
 - **`TurnEnding`: whether an Action ends the turn, as one replaceable object.**
   New module `turn_ending`, installed with `set_turn_ending` (both exported).
   `after_action(live, actor)` is asked in `_end_action` when an Action-costed

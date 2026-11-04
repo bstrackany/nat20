@@ -317,6 +317,7 @@ from dnd5e_engine.views import LiveCombatView
 
 from .monster_ai import monster_ai
 from .reaction_resolver import reaction_resolver
+from .route_planner import RoutePurpose, route_planner
 from .turn_ending import turn_ending
 
 _LOGGER = logging.getLogger(__name__)
@@ -2115,6 +2116,40 @@ def _take_walk_step(live: _LiveCombat, mover_id: str, next_cell: str) -> bool:
     return True
 
 
+def _planned_route(
+    live: _LiveCombat,
+    mover: Combatant,
+    engine_route: Sequence[str],
+    *,
+    purpose: RoutePurpose,
+    goal: str,
+    avoid: Collection[str],
+) -> list[str]:
+    """The route the installed ``RoutePlanner`` walks ``mover`` along to
+    ``goal``, offered ``engine_route``, the engine's own pick."""
+
+    def provokes(from_cell: str, to_cell: str) -> bool:
+        return bool(
+            _opportunity_attackers(
+                live, mover_id=mover.entity_id, from_cell=from_cell, to_cell=to_cell
+            )
+        )
+
+    return list(
+        route_planner().route(
+            live,
+            mover,
+            list(engine_route),
+            purpose=purpose,
+            start=live.actor_zone[mover.entity_id],
+            goal=goal,
+            avoid=frozenset(avoid),
+            budget_ft=mover.movement_remaining,
+            provokes=provokes,
+        )
+    )
+
+
 def _walk_path(live: _LiveCombat, mover_id: str, path: Sequence[str]) -> None:
     """Walk ``mover_id`` along ``path`` (``path[0]`` is its own cell) one
     ``_take_walk_step`` at a time, stopping at the first step that can't be
@@ -2142,15 +2177,19 @@ def _execute_flee_retreat(
     ]
     if start is None or not threat_cells:
         return
+    enemy_cells = _occupied_cells(live, exclude=_allied_ids(live, monster.entity_id))
     route = _plan_flee_route(
         live.topology,
         start,
         threat_cells,
         monster.movement_remaining,
-        enemy_cells=_occupied_cells(live, exclude=_allied_ids(live, monster.entity_id)),
+        enemy_cells=enemy_cells,
         occupied_cells=_occupied_cells(live, exclude=(monster.entity_id,)),
     )
     if route is not None:
+        route = _planned_route(
+            live, monster, route, purpose="flee", goal=route[-1], avoid=enemy_cells
+        )
         _walk_path(live, monster.entity_id, route)
 
 
@@ -9768,7 +9807,8 @@ _OUT_OF_TURN_INTENTS: frozenset[str] = frozenset({"arm", "disarm"})
 
 def _handle_move(live: _LiveCombat, current: Combatant, intent: PlayerIntent) -> None:
     """SRD 5.2 §Movement and Position — move ``current`` to ``target_zone_id``
-    along the fewest-cells legal route (``shortest_path``), paying each leg's
+    along the fewest-cells legal route (``shortest_path``), or the route the
+    installed ``RoutePlanner`` picks instead, paying each leg's
     ``edge_distance`` (difficult terrain doubles) out of ``movement_remaining``.
     Each uninterrupted run of steps emits one ``ActorMoved`` (see below). Movement does
     NOT end the turn.
@@ -9823,7 +9863,14 @@ def _handle_move(live: _LiveCombat, current: Combatant, intent: PlayerIntent) ->
     # Enemy spaces are impassable; an ally's space, a summon's included, may
     # be passed through.
     enemy_cells = _occupied_cells(live, exclude=_allied_ids(live, actor_id))
-    path = live.topology.shortest_path(start_zone, destination, avoid=enemy_cells)
+    path = _planned_route(
+        live,
+        current,
+        live.topology.shortest_path(start_zone, destination, avoid=enemy_cells),
+        purpose="move",
+        goal=destination,
+        avoid=enemy_cells,
+    )
     if not path:
         _emit(live, MoveFailed(actor_id=actor_id, reason="unreachable"))
         return
@@ -15972,7 +16019,14 @@ async def advance_monster_turn(
             # ``MonsterAI`` may plan the approach instead (``plan_move``).
             planned = monster_ai().plan_move(live, current, chosen_target, monster_range_ft)
             if planned is None:
-                path = live.topology.shortest_path(attacker_zone, target_zone)
+                path = _planned_route(
+                    live,
+                    current,
+                    live.topology.shortest_path(attacker_zone, target_zone),
+                    purpose="approach",
+                    goal=target_zone,
+                    avoid=(),
+                )
                 dashed_budget = _monster_dash_movement_budget(
                     _path_total_distance(live.topology, path),
                     current.movement_remaining,

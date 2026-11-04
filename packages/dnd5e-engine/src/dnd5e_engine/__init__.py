@@ -74,6 +74,7 @@ from dnd5e_engine.rest import (
     resolve_short_rest,
 )
 from dnd5e_engine.results import EndCombatResult, StartCombatResult
+from dnd5e_engine.route_planner import RoutePlanner, set_route_planner
 from dnd5e_engine.rules.effects import roll_dice_str
 from dnd5e_engine.spatial import cell_id, parse_cell
 from dnd5e_engine.specs import (
@@ -121,6 +122,7 @@ __all__ = [
     "RecoveryPeriod",
     "RestOutcome",
     "RitualCast",
+    "RoutePlanner",
     "StartCombatResult",
     "TurnEnding",
     "WallSegment",
@@ -150,6 +152,7 @@ __all__ = [
     "roll_dice_str",
     "set_monster_ai",
     "set_reaction_resolver",
+    "set_route_planner",
     "set_turn_ending",
     "start_combat",
     "submit_player_intent",

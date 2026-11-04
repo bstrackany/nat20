@@ -73,8 +73,36 @@ A rejected move emits `MoveFailed` with one of:
 
 The route search minimises the number of *squares*, not their cost, so a mover
 may be routed through difficult terrain when an equally long detour would be
-cheaper. Distance for range and reach checks is measured in Chebyshev cells
-scaled to feet.
+cheaper, and it ignores reach, so a route may pass an enemy and provoke when a
+detour would not. Distance for range and reach checks is measured in Chebyshev
+cells scaled to feet.
+
+#### Choosing the route
+
+Which squares a creature crosses is its own choice; the rules only price the
+route and react to it. To route differently, install a `RoutePlanner`. Its
+`route(...)` is asked with the engine's own pick for a `move` intent
+(`purpose="move"`), a monster's closing walk when the `MonsterAI` plans none
+(`"approach"`) and a monster's flee (`"flee"`), and returns the cells to walk,
+start first. It is given the mover's remaining movement (`budget_ft`), the cells
+it must keep out of (`avoid`) and `provokes(a, b)`, true when that step would
+draw an opportunity attack right now. The engine prices and walks the returned
+route exactly as its own, so a `move` route over budget is still refused whole.
+
+```python
+from dnd5e_engine import RoutePlanner, set_route_planner
+
+class Cautious(RoutePlanner):
+    def route(self, live, mover, engine_route, *, purpose, start, goal,
+              avoid, budget_ft, provokes):
+        safe = my_search(live.topology, start, goal, avoid, budget_ft, provokes)
+        return safe or engine_route
+
+set_route_planner(Cautious())   # set_route_planner(None) restores the default
+```
+
+The distance a monster measures to its target for range checks is not a route
+and stays the fewest-squares one.
 
 ### Forced movement
 
