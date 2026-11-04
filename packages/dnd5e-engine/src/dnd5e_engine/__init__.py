@@ -83,6 +83,7 @@ from dnd5e_engine.specs import (
     WallSegment,
 )
 from dnd5e_engine.spellcasting import RitualCast, derive_pact_slots, resolve_ritual_cast
+from dnd5e_engine.turn_ending import TurnEnding, set_turn_ending
 from dnd5e_engine.types.effects import (
     ActiveEffect,
     ActiveEffectChange,
@@ -121,6 +122,7 @@ __all__ = [
     "RestOutcome",
     "RitualCast",
     "StartCombatResult",
+    "TurnEnding",
     "WallSegment",
     "advance_monster_turn",
     "build_party_member",
@@ -148,6 +150,7 @@ __all__ = [
     "roll_dice_str",
     "set_monster_ai",
     "set_reaction_resolver",
+    "set_turn_ending",
     "start_combat",
     "submit_player_intent",
 ]

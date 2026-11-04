@@ -16,6 +16,13 @@ caster takes. Requires the matching `dnd5e-srd-data`.
 
 ### Added
 
+- **`TurnEnding`: whether an Action ends the turn, as one replaceable object.**
+  New module `turn_ending`, installed with `set_turn_ending` (both exported).
+  `after_action(live, actor)` is asked in `_end_action` when an Action-costed
+  intent would end the turn (not for `pass`, nor while an Action Surge extra
+  action is left); `False` keeps the turn open for movement and the Bonus
+  Action until the host submits `pass`. The Action stays spent, so a second
+  one is refused as before. The default says end: behaviour is unchanged. No RNG.
 - **`ReactionResolver`: whether a reaction fires, as one replaceable object.**
   New module `reaction_resolver`, installed with `set_reaction_resolver` (both
   exported). `fires(live, reactor, reaction, trigger, context)` is asked just

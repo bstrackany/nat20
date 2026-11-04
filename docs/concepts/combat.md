@@ -26,6 +26,28 @@ fewest-cells legal route there in one intent ([Grid](grid.md#pathing)). Off-turn
 (Shield, Counterspell, opportunity attacks) are never prompted for
 mid-resolution; they must be [pre-armed](reactions.md).
 
+### When a turn ends
+
+A PC's turn ends when its Action resolves — an Attack action once its swings
+are spent — or when you submit `"pass"`. Moving, Dash, Disengage and a Bonus
+Action taken before the Action keep the turn; an Action Surge extra action
+keeps it open for that action.
+
+SRD 5.2 lets a creature move and use its Bonus Action after its Action too
+("You decide whether to move first or take the action first"). To allow that,
+install a `TurnEnding` whose `after_action(live, actor)` answers `False`: the
+turn then stays open until `"pass"`, and a second Action is refused as before.
+
+```python
+from dnd5e_engine import TurnEnding, set_turn_ending
+
+class PlayerEndsTheTurn(TurnEnding):
+    def after_action(self, live, actor):
+        return not actor.entity_id.startswith("char:")
+
+set_turn_ending(PlayerEndsTheTurn())   # set_turn_ending(None) restores the default
+```
+
 ### Summoned creatures
 
 The initiative order can grow and shrink mid-combat. SRD 5.2 Summon Dragon

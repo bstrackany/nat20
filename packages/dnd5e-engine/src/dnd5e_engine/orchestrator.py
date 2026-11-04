@@ -317,6 +317,7 @@ from dnd5e_engine.views import LiveCombatView
 
 from .monster_ai import monster_ai
 from .reaction_resolver import reaction_resolver
+from .turn_ending import turn_ending
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -9556,9 +9557,14 @@ def _end_action(live: _LiveCombat, actor_id: str, intent: PlayerIntent) -> None:
     """End ``actor_id``'s turn after an Action-costed intent, unless an Action
     Surge extra action is still unspent — SRD 5.2: "On your turn, you can take
     one additional action" — so the turn stays open for it (an unused one
-    lapses at the actor's next turn start). ``pass`` always ends the turn."""
+    lapses at the actor's next turn start), or unless the installed
+    ``TurnEnding`` keeps it open. ``pass`` always ends the turn."""
     actor = _find_combatant(live, actor_id)
-    if intent.intent_type != "pass" and actor is not None and actor.extra_actions_remaining > 0:
+    if (
+        intent.intent_type != "pass"
+        and actor is not None
+        and (actor.extra_actions_remaining > 0 or not turn_ending().after_action(live, actor))
+    ):
         _maybe_roll_death_save(live)
         return
     _end_turn_and_advance(live, actor_id)
