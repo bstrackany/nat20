@@ -117,6 +117,12 @@
           "mode": 2,
           "priority": null,
           "value": "1"
+        },
+        {
+          "key": "flags.advantage.attack.spell",
+          "mode": 5,
+          "priority": null,
+          "value": "1"
         }
       ],
       "description": "<p>The spell save DC of your Sorcerer spells increases by 1. (Automated)</p><p>You have Advantage on the attack rolls of Sorcerer spells you cast. (Not automated)</p>",

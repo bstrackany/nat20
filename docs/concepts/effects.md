@@ -191,6 +191,7 @@ derivation already folds):
 | `system.attributes.movement.walk` (add, multiply, override, downgrade, upgrade) | the walking Speed and the turn's movement budget (Longstrider, Haste, Slow) |
 | `system.bonuses.spell.dc` | the caster's spell save DC |
 | `flags.advantage.attack`, `flags.disadvantage.attack` | the bearer's own attack rolls |
+| `flags.advantage.attack.spell` | the bearer's spell attack rolls only, cantrips included (Innate Sorcery) |
 | `flags.grants.advantage.attack`, `flags.grants.disadvantage.attack` | attack rolls against the bearer (Faerie Fire, Blur) |
 | `flags.advantage.save[.<ability>]`, `flags.advantage.check[.<ability>]` and the `disadvantage` twins | the bearer's saves and checks (standalone `resolve_check`) |
 | `statuses` | the conditions the effect imposes |

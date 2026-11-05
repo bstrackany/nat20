@@ -662,6 +662,12 @@ def attacker_advantage_flags(ctx: ActivityResolutionContext) -> tuple[bool, bool
                 continue
             if ch.key == "flags.advantage.attack":
                 has_advantage = True
+            elif ch.key == "flags.advantage.attack.spell" and ctx.base_spell_level is not None:
+                # SRD 5.2 Innate Sorcery: "You have Advantage on the attack
+                # rolls of Sorcerer spells you cast." — a spell's attack only
+                # (``base_spell_level`` is set for a spell, 0 for a cantrip, and
+                # ``None`` for a weapon, feature or stat-block attack).
+                has_advantage = True
             elif ch.key == "flags.disadvantage.attack":
                 has_disadvantage = True
     # Both present cancel to normal (the legacy evaluator ``reconcile_adv``).

@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Innate Sorcery's Advantage.** Its effect gains
+  `flags.advantage.attack.spell` ("You have Advantage on the attack rolls of
+  Sorcerer spells you cast."; Foundry: "Not automated") through
+  `_EFFECT_CHANGE_CORRECTIONS`, which now also reaches class features. 1
+  canonical file patched.
 - **Conditional always-on effects.** `PassiveEffect.active_while`
   (`ActiveWhile`: `effect` — another effect on the bearer, by slug; `bloodied`;
   `unless_incapacitated`; every set field must hold), left out of a dump when

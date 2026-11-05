@@ -16,6 +16,12 @@ caster takes. Requires the matching `dnd5e-srd-data`.
 
 ### Added
 
+- **`flags.advantage.attack.spell`: Advantage on spell attack rolls only.** An
+  effect change with this key gives its bearer Advantage on the attack roll of
+  a spell (cantrips included), not of a weapon, feature or stat-block attack
+  (`attacker_advantage_flags`). SRD 5.2 Innate Sorcery: "You have Advantage on
+  the attack rolls of Sorcerer spells you cast." Requires the matching
+  `dnd5e-srd-data` for Innate Sorcery itself. No RNG.
 - **`PlayerIntent.damage_type`: the caster picks the damage type.** A part
   that offers a choice ("1d8 damage of a type you choose", SRD 5.2 Sorcerous
   Burst; Chromatic Orb) deals the named type; it fills the existing

@@ -2425,11 +2425,13 @@ def _append_activity_trigger_copies(slug: str, activities: list[Activity]) -> li
     return out
 
 
-#: ``(spell slug, effect _id)`` → the mechanical changes the effect's own SRD 5.2
-#: sentence states but the pinned Foundry source leaves to a module: an effect
-#: on the TARGET that grants attack rolls against it advantage or disadvantage
-#: (``flags.grants.{advantage,disadvantage}.attack``, read by the engine's
-#: attack resolver). The pins live in ``tests/test_effect_change_corrections.py``.
+#: ``(spell or feature slug, effect _id)`` → the mechanical changes the effect's
+#: own SRD 5.2 sentence states but the pinned Foundry source leaves to a module:
+#: an effect on the TARGET that grants attack rolls against it advantage or
+#: disadvantage (``flags.grants.{advantage,disadvantage}.attack``), or one on its
+#: BEARER giving its spell attacks advantage (``flags.advantage.attack.spell``),
+#: both read by the engine's attack resolver. The pins live in
+#: ``tests/test_effect_change_corrections.py``.
 _EFFECT_CHANGE_CORRECTIONS: dict[tuple[str, str], list[PassiveEffectChange]] = {
     # "For the duration, any creature has Disadvantage on attack rolls against you."
     ("blur", "PsuBObX6WLcNEvUw"): [
@@ -2453,6 +2455,11 @@ _EFFECT_CHANGE_CORRECTIONS: dict[tuple[str, str], list[PassiveEffectChange]] = {
     # (the effect reaches them through the spell's area, ``_AREAS``)
     ("holy-aura", "csA26qg5YSsji1ZZ"): [
         PassiveEffectChange(key="flags.grants.disadvantage.attack", mode=5, value="1")
+    ],
+    # Innate Sorcery: "You have Advantage on the attack rolls of Sorcerer spells
+    # you cast." (Foundry: "(Not automated)")
+    ("innate-sorcery", "WtiHwWONdmCOeSDR"): [
+        PassiveEffectChange(key="flags.advantage.attack.spell", mode=5, value="1")
     ],
 }
 
@@ -3938,7 +3945,10 @@ def translate_feature_yaml(
         passive_effects=_apply_effect_endings(
             slug,
             _apply_active_while(
-                slug, _apply_feature_effect_value_corrections(slug, _passive_effects(doc))
+                slug,
+                _apply_effect_change_corrections(
+                    slug, _apply_feature_effect_value_corrections(slug, _passive_effects(doc))
+                ),
             ),
         ),
         advancement=_advancement(system),

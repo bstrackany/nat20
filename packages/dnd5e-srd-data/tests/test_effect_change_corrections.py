@@ -108,9 +108,24 @@ def test_an_attack_grant_follows_its_sentence(
     assert _EFFECT_CHANGE_CORRECTIONS[(slug, effect_id)] == [grant]
 
 
+def test_innate_sorcery_gives_its_bearers_spell_attacks_advantage() -> None:
+    feature = LOADER.get_feature("innate-sorcery")
+    assert feature is not None
+    [effect] = feature.passive_effects
+    assert (
+        "You have Advantage on the attack rolls of Sorcerer spells you cast" in effect.description
+    )
+    advantage = PassiveEffectChange(key="flags.advantage.attack.spell", mode=5, value="1")
+    assert [c.key for c in effect.changes] == ["system.bonuses.spell.dc", advantage.key]
+    assert _EFFECT_CHANGE_CORRECTIONS[("innate-sorcery", effect.id)] == [advantage]
+
+
 def test_every_correction_reached_the_corpus() -> None:
     for (slug, effect_id), changes in _EFFECT_CHANGE_CORRECTIONS.items():
-        data = json.loads((CANONICAL / "spells" / f"{slug}.json").read_text(encoding="utf-8"))
+        path = CANONICAL / "spells" / f"{slug}.json"
+        if not path.exists():
+            path = CANONICAL / "features" / f"{slug}.json"
+        data = json.loads(path.read_text(encoding="utf-8"))
         [effect] = [e for e in data["passive_effects"] if e["id"] == effect_id]
         shipped = [PassiveEffectChange.model_validate(c) for c in effect["changes"]]
         for change in changes:

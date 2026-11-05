@@ -1436,6 +1436,13 @@ now calls the engine rather than standing in for it. Residual gaps:
 - **Group checks and tool proficiencies are absent.** Neither is derived from
   class/background/equipment, nor accepted as an explicit build input.
   (`packages/dnd5e-engine/src/dnd5e_engine/build_spec.py`)
+- **Innate Sorcery's Advantage counts any spell (2026-11-04).** SRD 5.2
+  Innate Sorcery: "You have Advantage on the attack rolls of Sorcerer spells
+  you cast." `flags.advantage.attack.spell` gives Advantage to the attack roll
+  of every spell its bearer casts; a multiclass caster's Wizard or Cleric
+  spells gain it too, because a cast does not record which class's list the
+  spell came from.
+  (`packages/dnd5e-engine/src/dnd5e_engine/activities/attack.py::attacker_advantage_flags`)
 - **Class features that are prose-only in the corpus (amended 2026-09-24,
   C20):** Divine Smite, Metamagic / Sorcery Points and Eldritch Invocations.
   Nothing ties a Divine Smite cast to the Melee weapon or Unarmed Strike hit
