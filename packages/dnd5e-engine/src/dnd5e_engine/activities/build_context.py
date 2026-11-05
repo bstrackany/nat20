@@ -213,6 +213,7 @@ def build_activity_context(
     scale_values: dict[str, int | str] | None = None,
     class_levels: dict[str, int] | None = None,
     cast_level_override: int | None = None,
+    damage_type_choices: dict[str, str] | None = None,
     is_feature_invocation: bool = False,
     active_effects: Sequence[ActiveEffect] = (),
     sneak_attack_spent: dict[str, bool] | None = None,
@@ -537,6 +538,7 @@ def build_activity_context(
         scale_values=scale_values or {},
         class_levels=class_levels or {},
         cast_level_override=cast_level_override,
+        damage_type_choices=damage_type_choices or {},
         suppress_positive_ability_damage_mod=suppress_positive_ability_damage_mod,
         use_versatile_damage=use_versatile_damage,
         # SRD 5.2 §Weapon Mastery — Vex / Sap: PRE-RESOLVED

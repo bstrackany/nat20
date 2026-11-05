@@ -33,6 +33,7 @@ _EVERY_FIELD: dict[str, Any] = {
     "use_bonus_action": True,
     "shove_push": True,
     "two_handed": True,
+    "damage_type": "fire",
     "as_ritual": True,
     "form_id": "wolf",
     "stat_block_action_id": "rend",

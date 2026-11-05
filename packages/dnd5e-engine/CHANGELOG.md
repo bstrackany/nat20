@@ -16,6 +16,13 @@ caster takes. Requires the matching `dnd5e-srd-data`.
 
 ### Added
 
+- **`PlayerIntent.damage_type`: the caster picks the damage type.** A part
+  that offers a choice ("1d8 damage of a type you choose", SRD 5.2 Sorcerous
+  Burst; Chromatic Orb) deals the named type; it fills the existing
+  `ActivityResolutionContext.damage_type_choices` for every activity of the
+  resolution (`build_activity_context(damage_type_choices=)`). `None` keeps the
+  first listed type, and a type the part does not offer keeps it too, with the
+  existing warning. No RNG.
 - **`RoutePlanner`: which route a creature walks, as one replaceable object.**
   New module `route_planner`, installed with `set_route_planner` (both
   exported). `route(live, mover, engine_route, *, purpose, start, goal, avoid,

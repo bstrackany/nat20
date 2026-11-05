@@ -467,6 +467,14 @@ class PlayerIntent(BaseModel):
     # actual melee swing (a two-handed grip declared on a thrown/ranged use
     # of the same weapon is ignored, per SRD "to make a melee attack").
     two_handed: bool = False
+    # SRD 5.2 Sorcerous Burst: "You cast sorcerous energy at one creature or
+    # object within range. Make a ranged attack roll against the target. On a
+    # hit, the target takes 1d8 damage of a type you choose: Acid, Cold, Fire,
+    # Lightning, Poison, Psychic, or Thunder." (Chromatic Orb likewise.) The
+    # caster's chosen type for every damage part of THIS resolution that
+    # offers a choice; ``None`` (the default) keeps the first listed type. A
+    # type the part does not offer is ignored with the existing warning.
+    damage_type: str | None = None
     # SRD 5.2 §Rituals: "To cast a spell as a Ritual, a spellcaster must have
     # it prepared" — the Ritual version "takes 10 minutes longer to cast than
     # normal, but it doesn't expend a spell slot." The turn economy has no
@@ -13470,6 +13478,14 @@ def _build_cast_spell_book(activities: Sequence[Any]) -> dict[str, Spell]:
     return book
 
 
+def _damage_type_choices(intent: PlayerIntent, activities: Sequence[Any]) -> dict[str, str]:
+    """The caster's chosen damage type (``PlayerIntent.damage_type``) keyed by
+    every activity of this resolution: a part offering a choice ("1d8 damage of
+    a type you choose", SRD 5.2 Sorcerous Burst) takes it, a single-type part
+    ignores it (``activities/damage.py::_part_type``)."""
+    return {a.id: intent.damage_type for a in activities} if intent.damage_type else {}
+
+
 def _item_cast_level_override(intent: PlayerIntent) -> int | None:
     """The forced cast level a ``use_item`` charges_to_spend request implies
     for the ``cast`` activity being charged, or ``None`` when no override
@@ -15444,6 +15460,7 @@ async def submit_player_intent(
                 feature_invocation.scaling_value if feature_invocation is not None else None
             ),
             conjuration=_conjuration_carrier(live, current, intent),
+            damage_type_choices=_damage_type_choices(intent, activities),
             # A stat-block command (C21) rolls at the stat block's
             # own scores and Proficiency Bonus.
             stat_block_magnitudes=(
